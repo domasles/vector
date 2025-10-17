@@ -20,9 +20,9 @@ class VectorDB:
     Vector Database - N-dimensional coordinate-based database system.
 
     Usage:
-        vdb = VectorDB("mydata.db")
-        vdb.insert("Name", {"surname": "Surname", "age": 28})
-        age = vdb.lookup("Name", "age")  # Returns 28
+        db = VectorDB("mydata.db")
+        db.insert("Name", {"surname": "Surname", "age": 28})
+        age = db.lookup("Name", "age")  # Returns 28
 
     "Name" is stored on the central axis (X-axis). It acts as a unique identifier, the primary key.
     All dimensional attributes (surname, age, etc.) are stored in separate dimensional spaces.

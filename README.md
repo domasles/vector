@@ -1,4 +1,4 @@
-# Vector - Vector-Based Propeller Database
+# VECTOR - VECTOR Encodes Coordinates To Optimize Retrieval
 
 A lightweight vector database library for Python that organizes data using mathematical coordinate systems. Built with domain-driven architecture and designed for single-file storage with O(1) lookup performance.
 
@@ -44,7 +44,7 @@ pip install vector-db
 ### Basic Usage
 
 ```python
-from vector import VectorDB
+from vector_db import VectorDB
 
 # Create or open a database
 db = VectorDB("my_data.db")
@@ -95,18 +95,20 @@ db.insert(x_coordinate=103, age=25, name="Charlie", department="Engineering")
 Vector follows clean architecture principles with mathematical domain modeling:
 
 ```
-vector/
+src/vector_db/
 ├── domain/
-│   ├── central_axis.py         # X-axis coordinate system (primary key)
-│   ├── dimensional_space.py    # Y, Z, J... dimensional spaces
-│   ├── coordinate_mapping.py   # Functions between dimensional spaces
-│   └── vector_point.py         # Individual data records
+│   ├── coordinates/            # X-axis coordinate system (primary key)
+│   ├── spaces/                 # Y, Z, J... dimensional spaces  
+│   ├── mappings/               # Functions between dimensional spaces
+│   └── __init__.py
 ├── application/
-│   └── vector_db.py           # Main database API
+│   ├── main.py                 # Main database API
+│   └── __init__.py
 ├── infrastructure/
-│   └── storage/
-│       └── file_storage.py    # .db file persistence
-└── __init__.py                # Public API exports
+│   ├── storage/                # .db file persistence
+│   └── __init__.py
+├── meta.py                     # Version and metadata
+└── __init__.py                 # Public API exports
 ```
 
 ### Domain Layer
