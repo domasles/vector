@@ -1,3 +1,5 @@
+![VECTOR Logo](./VECTORLogo.png)
+
 # VECTOR - VECTOR Encodes Coordinates To Optimize Retrieval
 
 A lightweight vector database library for Python that organizes data using mathematical coordinate systems. Built with domain-driven architecture and designed for single-file storage with O(1) lookup performance.
