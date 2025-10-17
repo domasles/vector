@@ -1,4 +1,4 @@
-![VECTOR Logo](./VECTORLogo.png)
+![VECTOR Logo](https://raw.githubusercontent.com/domasles/vector/main/VECTORLogo.png)
 
 # VECTOR - VECTOR Encodes Coordinates To Optimize Retrieval
 
