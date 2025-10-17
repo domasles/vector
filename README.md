@@ -197,7 +197,7 @@ db.insert(x_coordinate=3, age=25, name="Charlie", city="Boston", department="Eng
 ```json
 {
   "metadata": {
-    "version": "1.0.0-beta",
+    "version": "1.0.1-beta",
     "created_at": "2025-01-XX",
     "coordinate_count": 1000
   },
