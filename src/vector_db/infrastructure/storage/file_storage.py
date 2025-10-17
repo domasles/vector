@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
-from meta import __version__
+from ...meta import __version__
 
 logger = logging.getLogger(__name__)
 

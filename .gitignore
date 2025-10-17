@@ -3,6 +3,8 @@ __pycache__/
 
 # Build outputs
 build/
+dist/
+*.egg-info/
 
 # Virtual environments
 venv/

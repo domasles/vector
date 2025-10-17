@@ -7,11 +7,11 @@ from typing import Dict, Any, Optional, List
 
 import logging
 
-from domain.coordinates import CentralAxis, VectorPoint
-from domain.mappings import CoordinateMapping
-from domain.spaces import DimensionalSpace
+from ..domain.coordinates import CentralAxis, VectorPoint
+from ..domain.mappings import CoordinateMapping
+from ..domain.spaces import DimensionalSpace
 
-from infrastructure.storage import VectorFileStorage
+from ..infrastructure.storage import VectorFileStorage
 
 logger = logging.getLogger(__name__)
 

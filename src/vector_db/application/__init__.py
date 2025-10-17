@@ -1,5 +1,5 @@
 """Application layer modules."""
 
-from .vector_db import VectorDB
+from .main import VectorDB
 
 __all__ = ['VectorDB']
