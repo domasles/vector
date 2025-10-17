@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vector-db"
+name = "vector-datalib"
 dynamic = ["version"]
 description = "VECTOR: N-dimensional coordinate database with O(1) lookups"
 

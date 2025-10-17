@@ -40,7 +40,7 @@ cd vector
 pip install -e .
 
 # Or install from PyPI (when published)
-pip install vector-db
+pip install vector-datalib
 ```
 
 ### Basic Usage
