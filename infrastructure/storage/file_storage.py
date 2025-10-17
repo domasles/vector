@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
+from meta import __version__
+
 logger = logging.getLogger(__name__)
 
 class VectorFileStorage:
@@ -18,8 +20,9 @@ class VectorFileStorage:
 
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
+
         self.metadata = {
-            "version": "1.0",
+            "version": __version__,
             "created_at": None,
             "last_modified": None,
             "total_vector_points": 0,
