@@ -220,7 +220,7 @@ db.insert(x_coordinate=3, age=25, name="Charlie", city="Boston", department="Eng
 ## Development
 
 ### Requirements
-- Python 3.7+
+- Python 3.9+
 - No external dependencies (uses only standard library)
 
 ## Coordinate System Examples
