@@ -45,51 +45,65 @@ pip install vector-datalib
 
 ### Basic Usage
 
+**Pure Async Architecture - Modern Python Standards**
+
 ```python
+import asyncio
 from vector_db import VectorDB
 
-# Create or open a database
-db = VectorDB("my_data.db")
+async def main():
+    # Create database with async context manager
+    async with VectorDB("my_data.db") as db:
+        # Insert data - all operations are async
+        await db.insert(101, {"age": 25, "name": "Alice"})
+        await db.insert(102, {"age": 30, "name": "Bob"})
+        await db.insert(103, {"age": 25, "name": "Charlie"})  # age=25 deduplicated automatically
 
-# Insert data (X-axis is always the primary key)
-db.insert(x_coordinate=1, age=25, name="Alice")
-db.insert(x_coordinate=2, age=30, name="Bob")
-db.insert(x_coordinate=3, age=25, name="Charlie")  # age=25 deduplicated automatically
+        # O(1) coordinate-based lookup
+        name = await db.lookup(101, "name")
+        print(f"Employee 101: {name}")  # Employee 101: Alice
 
-# O(1) coordinate-based lookup
-person = db.lookup(x_coordinate=1)
-print(person)  # {'age': 25, 'name': 'Alice'}
+        # Concurrent batch operations with asyncio.gather()
+        await db.batch_insert([
+            (104, {"name": "Diana", "age": 28}),
+            (105, {"name": "Eve", "age": 32}),
+            (106, {"name": "Frank", "age": 27})
+        ])
 
-# Insert additional dimensions
-db.insert(x_coordinate=4, age=28, name="Diana", city="New York")
+        # Update operations
+        await db.update(101, "age", 26)  # Alice's age updated
 
-# Update existing coordinates
-db.update(x_coordinate=1, age=26)  # Alice's age updated
+        # Auto-save with async context manager
+        # Database automatically saved on __aexit__
 
-# Save to persistent storage
-db.save("my_data.db")
-
-# Load from storage
-db2 = VectorDB.load("my_data.db")
+# Run with asyncio
+asyncio.run(main())
 ```
 
-### Coordinate System Concepts
+### Advanced Async Patterns
 
 ```python
-# X-axis serves as the central coordinate system
-# Other dimensions (Y, Z, J...) represent relationships
+async def advanced_usage():
+    async with VectorDB("analytics.db") as db:
+        # Concurrent lookups with asyncio.gather()
+        user_queries = [(101, "name"), (102, "age"), (103, "department")]
+        results = await db.batch_lookup(user_queries)
 
-# Example: User data with coordinate-based organization
-db = VectorDB("users.db")
+        # LRU caching automatically optimizes repeated lookups
+        name1 = await db.lookup(101, "name")  # Database hit
+        name2 = await db.lookup(101, "name")  # Cache hit (faster)
 
-# X-coordinate: User ID (primary key)
-# Y-dimension: Age (relationship to time)
-# Z-dimension: Name (relationship to identity)
-db.insert(x_coordinate=101, age=25, name="Alice")
-db.insert(x_coordinate=102, age=30, name="Bob")
+        # Concurrent updates
+        updates = [
+            (101, "status", "active"),
+            (102, "status", "inactive"), 
+            (103, "role", "manager")
+        ]
 
-# Dimensional expansion - add new coordinate without schema changes
-db.insert(x_coordinate=103, age=25, name="Charlie", department="Engineering")
+        successful = await db.batch_update(updates)
+        print(f"Updated {successful} records concurrently")
+
+asyncio.run(advanced_usage())
 ```
 
 ## Architecture
@@ -146,8 +160,9 @@ All tables in Vector must follow the coordinate system principle:
 # P(x) = {Y: f_y(x), Z: f_z(x), J: f_j(x), ...}
 # where f_axis represents the mapping function for each dimension
 
-db.insert(x_coordinate=1, age=25, name="Alice", city="Boston")
-# Creates: P(1) = {age: f_age(1)=25, name: f_name(1)="Alice", city: f_city(1)="Boston"}
+async with VectorDB("data.db") as db:
+    await db.insert(101, {"age": 25, "name": "Alice", "city": "Boston"})
+    # Creates: P(101) = {age: f_age(101)=25, name: f_name(101)="Alice", city: f_city(101)="Boston"}
 ```
 
 ### Value Deduplication
@@ -155,11 +170,12 @@ db.insert(x_coordinate=1, age=25, name="Alice", city="Boston")
 Vector automatically optimizes storage by deduplicating values within dimensional spaces:
 
 ```python
-db.insert(x_coordinate=1, age=25, name="Alice")
-db.insert(x_coordinate=2, age=25, name="Bob")    # age=25 stored once
-db.insert(x_coordinate=3, age=25, name="Charlie") # age=25 referenced
+async with VectorDB("data.db") as db:
+    await db.insert(101, {"age": 25, "name": "Alice"})
+    await db.insert(102, {"age": 25, "name": "Bob"})     # age=25 stored once
+    await db.insert(103, {"age": 25, "name": "Charlie"}) # age=25 referenced
 
-# Storage optimization: age=25 stored once, referenced by multiple coordinates
+    # Storage optimization: age=25 stored once, referenced by multiple coordinates
 ```
 
 ### N-Dimensional Scalability
@@ -167,14 +183,15 @@ db.insert(x_coordinate=3, age=25, name="Charlie") # age=25 referenced
 Add new dimensions without structural changes:
 
 ```python
-# Start with 2 dimensions
-db.insert(x_coordinate=1, age=25, name="Alice")
+async with VectorDB("data.db") as db:
+    # Start with 2 dimensions
+    await db.insert(101, {"age": 25, "name": "Alice"})
 
-# Expand to 3 dimensions
-db.insert(x_coordinate=2, age=30, name="Bob", city="Boston")
+    # Expand to 3 dimensions
+    await db.insert(102, {"age": 30, "name": "Bob", "city": "Boston"})
 
-# Expand to N dimensions dynamically
-db.insert(x_coordinate=3, age=25, name="Charlie", city="Boston", department="Engineering")
+    # Expand to N dimensions dynamically
+    await db.insert(103, {"age": 25, "name": "Charlie", "city": "Boston", "department": "Engineering"})
 ```
 
 ## Performance Characteristics
@@ -184,6 +201,12 @@ db.insert(x_coordinate=3, age=25, name="Charlie", city="Boston", department="Eng
 - **Lookup**: O(1) direct coordinate access
 - **Update**: O(1) coordinate-based modification
 - **Dimensional Expansion**: O(1) addition of new coordinate relationships
+
+### Concurrency Benefits
+- **Pure Async Architecture**: Non-blocking I/O operations with asyncio
+- **Concurrent Batch Operations**: Multiple operations with asyncio.gather()
+- **LRU Caching**: In-memory caching for frequently accessed data
+- **Async Context Managers**: Automatic resource management and cleanup
 
 ### Space Complexity
 - **Value Deduplication**: Automatic optimization reduces memory usage
@@ -228,32 +251,32 @@ db.insert(x_coordinate=3, age=25, name="Charlie", city="Boston", department="Eng
 ### User Management System
 
 ```python
-db = VectorDB("users.db")
+async with VectorDB("users.db") as db:
+    # X-coordinate: User ID, Y-dimension: Profile data
+    await db.insert(1001, {"name": "Alice Johnson", "age": 28, "department": "Engineering"})
+    await db.insert(1002, {"name": "Bob Smith", "age": 32, "department": "Sales"})  
+    await db.insert(1003, {"name": "Charlie Brown", "age": 28, "department": "Engineering"})
 
-# X-coordinate: User ID, Y-dimension: Profile data
-db.insert(x_coordinate=1001, name="Alice Johnson", age=28, department="Engineering")
-db.insert(x_coordinate=1002, name="Bob Smith", age=32, department="Sales")
-db.insert(x_coordinate=1003, name="Charlie Brown", age=28, department="Engineering")
+    # O(1) user lookup
+    name = await db.lookup(1001, "name")
+    age = await db.lookup(1001, "age") 
+    print(f"User: {name}, Age: {age}")
 
-# O(1) user lookup
-user = db.lookup(x_coordinate=1001)
-print(f"User: {user['name']}, Age: {user['age']}")
-
-# Dynamic expansion - add new dimensional relationships
-db.update(x_coordinate=1001, salary=75000, location="Boston")
+    # Dynamic expansion - add new dimensional relationships
+    await db.update(1001, "salary", 75000)
+    await db.update(1001, "location", "Boston")
 ```
 
 ### Product Catalog
 
 ```python
-db = VectorDB("products.db")
+async with VectorDB("products.db") as db:
+    # X-coordinate: Product ID, Y/Z dimensions: Product attributes
+    await db.insert(2001, {"name": "Laptop", "price": 999.99, "category": "Electronics"})
+    await db.insert(2002, {"name": "Mouse", "price": 29.99, "category": "Electronics"})
+    await db.insert(2003, {"name": "Desk", "price": 299.99, "category": "Furniture"})
 
-# X-coordinate: Product ID, Y/Z dimensions: Product attributes
-db.insert(x_coordinate=2001, name="Laptop", price=999.99, category="Electronics")
-db.insert(x_coordinate=2002, name="Mouse", price=29.99, category="Electronics")
-db.insert(x_coordinate=2003, name="Desk", price=299.99, category="Furniture")
-
-# Value deduplication automatically optimizes "Electronics" category storage
+    # Value deduplication automatically optimizes "Electronics" category storage
 ```
 
 ## Best Practices
@@ -265,9 +288,10 @@ db.insert(x_coordinate=2003, name="Desk", price=299.99, category="Furniture")
 - **Plan for dimensional expansion**: Design coordinate spaces that can grow dynamically
 
 ### Performance Optimization
-- **Use appropriate coordinate ranges**: Choose coordinate values that distribute well
-- **Batch operations**: Group multiple insertions when possible
-- **Regular persistence**: Save to .db files at appropriate intervals
+- **Use async context managers**: Always use `async with VectorDB()` for resource management
+- **Leverage concurrent operations**: Use `batch_insert()`, `batch_lookup()`, `batch_update()` for multiple operations
+- **LRU cache awareness**: Repeated lookups are cached automatically
+- **Appropriate coordinate ranges**: Choose coordinate values that distribute well
 - **Monitor dimensional growth**: Large numbers of unique values reduce deduplication benefits
 
 ### Data Organization
