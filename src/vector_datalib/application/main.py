@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 
 class VectorDB:
     """
-    Vector Database - Pure async coordinate-based database system.
+    Vector Database - Coordinate-based database system.
 
     Usage:
-        async with VectorDB("data.db") as db:
-            await db.insert(101, {"name": "Alice", "age": 28})
-            name = await db.lookup(101, "name")
+        with VectorDB("data.db") as db:
+            db.insert(101, {"name": "Alice", "age": 28})
+            name = db.lookup(101, "name")
     """
 
     def __init__(self, database_path: str = "vector.db"):
@@ -53,57 +53,58 @@ class VectorDB:
             self._cache_service
         )
 
-    async def __aenter__(self):
-        """Async context manager entry."""
+    def __enter__(self):
+        """Context manager entry."""
 
         if not self._initialized:
-            await self._coordinate_service.load_database_structure()
+            self._coordinate_service.load_database_structure()
             self._initialized = True
 
         logger.info(f"VectorDB initialized with {self._central_axis.size()} vector points")
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit - auto-save and cleanup."""
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - auto-save and cleanup."""
 
         try:
-            await self._coordinate_service.save_database()
+            self._coordinate_service.save_database()
 
         except Exception as e:
             logger.error(f"Error saving database on exit: {e}")
+            raise
 
         finally:
             self._cache_service.clear()
 
         return False
 
-    async def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
+    def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """Smart insert with collision detection (insert or update if exists)."""
-        return await self._coordinate_service.insert_with_attributes(vector_value, attributes, position)
+        return self._coordinate_service.insert_with_attributes(vector_value, attributes, position)
 
-    async def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
+    def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """Look up a value for a vector point in a specific dimension."""
-        return await self._coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
+        return self._coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
 
-    async def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
+    def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """Update a specific value for a vector point in a dimension."""
-        return await self._coordinate_service.update_coordinate_attribute(vector_value, dimension_name, new_value)
+        return self._coordinate_service.update_coordinate_attribute(vector_value, dimension_name, new_value)
 
-    async def save(self) -> bool:
+    def save(self) -> bool:
         """Save the database to file."""
-        return await self._coordinate_service.save_database()
+        return self._coordinate_service.save_database()
 
-    async def batch_insert(self, records: List[tuple]) -> List[int]:
+    def batch_insert(self, records: List[tuple]) -> List[int]:
         """Smart batch insert with collision detection (insert or update if exists)."""
-        return await self._coordinate_service.batch_insert_with_attributes(records)
+        return self._coordinate_service.batch_insert_with_attributes(records)
 
-    async def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
-        """Perform multiple lookups concurrently."""
-        return await self._coordinate_service.batch_lookup_coordinates(queries)
+    def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
+        """Perform multiple lookups efficiently."""
+        return self._coordinate_service.batch_lookup_coordinates(queries)
 
-    async def batch_update(self, updates: List[tuple]) -> int:
+    def batch_update(self, updates: List[tuple]) -> int:
         """Perform multiple updates efficiently."""
-        return await self._coordinate_service.batch_update_coordinates(updates)
+        return self._coordinate_service.batch_update_coordinates(updates)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""

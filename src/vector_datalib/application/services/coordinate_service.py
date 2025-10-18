@@ -6,7 +6,6 @@ Follows DDD principles by coordinating domain logic without containing business 
 from typing import Dict, Any, Optional, List
 
 import logging
-import asyncio
 
 from ...domain.spaces import DimensionalSpace
 from ...domain.mappings import CoordinateMapping
@@ -34,7 +33,7 @@ class CoordinateService:
         self.storage = storage
         self.cache_service = cache_service
 
-    async def insert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
+    def insert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """
         Smart insert with collision detection (insert or update if exists).
 
@@ -48,7 +47,7 @@ class CoordinateService:
             logger.debug(f"Updating existing vector point '{vector_value}' at coordinate {existing_coordinate}")
 
             for dimension_name, value in attributes.items():
-                await self.update_coordinate_attribute(vector_value, dimension_name, value)
+                self.update_coordinate_attribute(vector_value, dimension_name, value)
 
             return existing_coordinate
 
@@ -73,7 +72,7 @@ class CoordinateService:
 
             return coordinate
 
-    async def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
+    def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """
         Look up a value for a vector point in a specific dimension.
         O(1) lookup with LRU caching coordination.
@@ -104,7 +103,7 @@ class CoordinateService:
 
         return result
 
-    async def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
+    def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """
         Update a specific value for a vector point in a dimension.
         Uses reference counting to safely manage dimensional values.
@@ -146,14 +145,14 @@ class CoordinateService:
         logger.debug(f"Updated {vector_value}:{dimension_name} = {new_value}")
         return True
 
-    async def batch_insert_with_attributes(self, records: List[tuple]) -> List[int]:
+    def batch_insert_with_attributes(self, records: List[tuple]) -> List[int]:
         """
-        Insert multiple records concurrently.
-        Orchestrates concurrent operations with proper cache management.
+        Insert multiple records efficiently.
+        Orchestrates batch operations with proper cache management.
         """
 
         self.cache_service.clear()
-        insert_tasks = []
+        coordinates = []
 
         for record in records:
             if len(record) == 2:
@@ -166,57 +165,47 @@ class CoordinateService:
             else:
                 raise ValueError("Each record must be (vector_value, attributes) or (vector_value, attributes, position)")
 
-            insert_tasks.append(self.insert_with_attributes(vector_value, attributes, position))
+            coord = self.insert_with_attributes(vector_value, attributes, position)
+            coordinates.append(coord)
 
-        coordinates = await asyncio.gather(*insert_tasks)
-        logger.info(f"Batch inserted {len(records)} records concurrently")
+        logger.info(f"Batch inserted {len(records)} records")
 
         return coordinates
 
-    async def batch_lookup_coordinates(self, queries: List[tuple]) -> List[Optional[Any]]:
+    def batch_lookup_coordinates(self, queries: List[tuple]) -> List[Optional[Any]]:
         """
-        Perform multiple lookups concurrently.
-        Orchestrates concurrent cache and domain lookups.
+        Perform multiple lookups efficiently.
+        Orchestrates batch cache and domain lookups.
         """
 
-        lookup_tasks = [
+        results = [
             self.lookup_by_coordinate(vector_value, dimension_name)
             for vector_value, dimension_name in queries
         ]
 
-        results = await asyncio.gather(*lookup_tasks)
         return results
 
-    async def batch_update_coordinates(self, updates: List[tuple]) -> int:
+    def batch_update_coordinates(self, updates: List[tuple]) -> int:
         """
         Perform multiple updates efficiently.
         Coordinates batch updates with proper error handling.
         """
 
         self.cache_service.clear()
+        successful_updates = 0
 
-        update_tasks = [
-            self.update_coordinate_attribute(vector_value, dimension_name, new_value)
-            for vector_value, dimension_name, new_value in updates
-        ]
+        for vector_value, dimension_name, new_value in updates:
+            try:
+                if self.update_coordinate_attribute(vector_value, dimension_name, new_value):
+                    successful_updates += 1
 
-        try:
-            results = await asyncio.gather(*update_tasks, return_exceptions=True)
-            successful_updates = sum(1 for result in results if result is True)
+            except Exception as e:
+                logger.warning(f"Failed to update {vector_value}:{dimension_name} - {e}")
 
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    vector_value, dimension_name, new_value = updates[i]
-                    logger.warning(f"Failed to update {vector_value}:{dimension_name} - {result}")
-
-        except Exception as e:
-            logger.error(f"Batch update failed: {e}")
-            return 0
-
-        logger.info(f"Batch updated {successful_updates}/{len(updates)} records concurrently")
+        logger.info(f"Batch updated {successful_updates}/{len(updates)} records")
         return successful_updates
 
-    async def save_database(self) -> bool:
+    def save_database(self) -> bool:
         """
         Save database using enhanced storage service.
         Coordinates between domain state and storage infrastructure.
@@ -230,7 +219,7 @@ class CoordinateService:
             database_data, self.central_axis, self.dimensional_spaces
         )
 
-    async def load_database_structure(self):
+    def load_database_structure(self):
         """
         Load database structure using enhanced storage service.
         Coordinates restoration of domain objects from storage.
