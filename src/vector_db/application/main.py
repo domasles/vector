@@ -3,8 +3,8 @@ Vector Database - Main application interface.
 This is the primary API that developers will use.
 """
 
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional, List
+from pathlib import Path
 
 import logging
 import asyncio
@@ -39,7 +39,7 @@ class VectorDB:
 
     def __init__(self, database_path: str = "vector.db"):
         """
-        Initialize Vector Database.
+        Initialize Vector Database (call __aenter__ to fully initialize).
 
         Args:
             database_path: Path to the .db file (created if doesn't exist)
@@ -54,20 +54,22 @@ class VectorDB:
 
         self._cache: Dict[str, Any] = {}
         self._cache_max_size = 1000
+        self._initialized = False
 
-        self._load_database()
+    async def __aenter__(self):
+        """Async context manager entry."""
+
+        if not self._initialized:
+            await self._load_database()
+            self._initialized = True
 
         logger.info(f"VectorDB initialized with {self.central_axis.size()} vector points")
-
-    def __enter__(self):
-        """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - auto-save and cleanup."""
-
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - auto-save and cleanup."""
         try:
-            self.save()
+            await self.save()
 
         except Exception as e:
             logger.error(f"Error saving database on exit: {e}")
@@ -77,7 +79,7 @@ class VectorDB:
 
         return False
 
-    def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
+    async def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """
         Insert a new vector point with its dimensional attributes.
 
@@ -110,7 +112,7 @@ class VectorDB:
         logger.debug(f"Inserted vector point '{vector_value}' at coordinate {coordinate}")
         return coordinate
 
-    def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
+    async def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """
         Look up a value for a vector point in a specific dimension.
         O(1) lookup with LRU caching: vector_value -> coordinate -> value_id -> value
@@ -139,7 +141,7 @@ class VectorDB:
 
         # Get value_id from coordinate mapping
         if dimension_name not in self.coordinate_mappings: return None
-        
+
         value_id = self.coordinate_mappings[dimension_name].get_mapping(coordinate)
         if value_id is None: return None
 
@@ -178,8 +180,8 @@ class VectorDB:
 
         if dimension_name not in self.dimensional_spaces: return False
         return self.dimensional_spaces[dimension_name].update_value(old_value, new_value)
-    
-    def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
+
+    async def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """
         Update a specific value for a vector point in a dimension.
 
@@ -199,19 +201,16 @@ class VectorDB:
 
         cache_key = f"{vector_value}:{dimension_name}"
         self._cache.pop(cache_key, None)
-        
-        # Get coordinate
         coordinate = self.central_axis.get_coordinate(vector_value)
 
         if coordinate is None:
             logger.warning(f"Vector point {vector_value} not found")
             return False
-            
+
         # Ensure dimension exists
         if dimension_name not in self.dimensional_spaces:
             self.add_dimension(dimension_name)
-            
-        # Add new value to dimensional space
+
         value_id = self.dimensional_spaces[dimension_name].add_value(new_value)
         self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
 
@@ -234,7 +233,7 @@ class VectorDB:
             return False
 
         return True
-    
+
     def add_dimension(self, dimension_name: str):
         """
         Add a new dimensional space to the database.
@@ -292,7 +291,7 @@ class VectorDB:
 
         return list(self.dimensional_spaces.keys())
 
-    def save(self) -> bool:
+    async def save(self) -> bool:
         """Save the database to file."""
 
         database_data = self._serialize_database()
@@ -326,7 +325,7 @@ class VectorDB:
             }
         }
 
-    def _load_database(self):
+    async def _load_database(self):
         """Load database from file if it exists."""
 
         database_data = self.storage.load_database()
@@ -387,9 +386,9 @@ class VectorDB:
             "metadata": self.storage.get_metadata()
         }
 
-    def batch_insert(self, records: List[tuple]) -> List[int]:
+    async def batch_insert(self, records: List[tuple]) -> List[int]:
         """
-        Insert multiple records efficiently in a single operation.
+        Insert multiple records concurrently using asyncio.gather().
 
         Args:
             records: List of tuples (vector_value, attributes_dict, optional_position)
@@ -398,29 +397,28 @@ class VectorDB:
             List[int]: Coordinates of inserted vector points
         """
 
-        coordinates = []
         self._cache.clear()
+        insert_tasks = []
 
         for record in records:
             if len(record) == 2:
                 vector_value, attributes = record
                 position = None
-
             elif len(record) == 3:
                 vector_value, attributes, position = record
-
             else:
                 raise ValueError("Each record must be (vector_value, attributes) or (vector_value, attributes, position)")
 
-            coordinate = self.insert(vector_value, attributes, position)
-            coordinates.append(coordinate)
+            insert_tasks.append(self.insert(vector_value, attributes, position))
 
-        logger.info(f"Batch inserted {len(records)} records")
+        coordinates = await asyncio.gather(*insert_tasks)
+        logger.info(f"Batch inserted {len(records)} records concurrently")
+
         return coordinates
 
-    def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
+    async def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
         """
-        Perform multiple lookups efficiently.
+        Perform multiple lookups concurrently using asyncio.gather().
 
         Args:
             queries: List of tuples (vector_value, dimension_name)
@@ -429,15 +427,15 @@ class VectorDB:
             List of lookup results (maintains order)
         """
 
-        results = []
+        lookup_tasks = [
+            self.lookup(vector_value, dimension_name)
+            for vector_value, dimension_name in queries
+        ]
 
-        for vector_value, dimension_name in queries:
-            result = self.lookup(vector_value, dimension_name)
-            results.append(result)
-
+        results = await asyncio.gather(*lookup_tasks)
         return results
 
-    def batch_update(self, updates: List[tuple]) -> int:
+    async def batch_update(self, updates: List[tuple]) -> int:
         """
         Perform multiple updates efficiently.
 
@@ -448,49 +446,28 @@ class VectorDB:
             int: Number of successful updates
         """
 
-        successful_updates = 0
         self._cache.clear()
 
-        for vector_value, dimension_name, new_value in updates:
-            try:
-                if self.update(vector_value, dimension_name, new_value):
-                    successful_updates += 1
+        update_tasks = [
+            self.update(vector_value, dimension_name, new_value)
+            for vector_value, dimension_name, new_value in updates
+        ]
 
-            except Exception as e:
-                logger.warning(f"Failed to update {vector_value}:{dimension_name} - {e}")
+        try:
+            results = await asyncio.gather(*update_tasks, return_exceptions=True)
+            successful_updates = sum(1 for result in results if result is True)
 
-        logger.info(f"Batch updated {successful_updates}/{len(updates)} records")
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    vector_value, dimension_name, new_value = updates[i]
+                    logger.warning(f"Failed to update {vector_value}:{dimension_name} - {result}")
+
+        except Exception as e:
+            logger.error(f"Batch update failed: {e}")
+            return 0
+
+        logger.info(f"Batch updated {successful_updates}/{len(updates)} records concurrently")
         return successful_updates
-
-    async def async_insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
-        """Async version of insert."""
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.insert, vector_value, attributes, position)
-    
-    async def async_lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
-        """Async version of lookup."""
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.lookup, vector_value, dimension_name)
-    
-    async def async_update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
-        """Async version of update."""
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.update, vector_value, dimension_name, new_value)
-    
-    async def async_save(self) -> bool:
-        """Async version of save."""
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.save)
-    
-    async def async_batch_insert(self, records: List[tuple]) -> List[int]:
-        """Async version of batch_insert."""
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.batch_insert, records)
 
     def __repr__(self) -> str:
         return f"VectorDB(path='{self.database_path}', points={self.central_axis.size()}, dimensions={len(self.dimensional_spaces)})"
