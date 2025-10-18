@@ -1,14 +1,16 @@
 """
 Vector Database File Storage - single file storage system.
 Handles persistence of the vector database to a single .db file.
+Uses MessagePack for efficient binary serialization and file locking for multi-process safety.
 """
 
 import logging
+import msgpack
 import gzip
-import json
 
 from typing import Dict, Any, Optional
 from datetime import datetime
+from filelock import FileLock
 from pathlib import Path
 
 from ...meta import __version__
@@ -20,6 +22,7 @@ class VectorFileStorage:
 
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
+        self.lock_path = Path(str(file_path) + ".lock")
 
         self.metadata = {
             "version": __version__,
@@ -32,6 +35,7 @@ class VectorFileStorage:
     def save_database(self, database_data: Dict[str, Any]) -> bool:
         """
         Save the complete vector database to file.
+        Uses MessagePack for efficient binary serialization and file locking for safety.
 
         Args:
             database_data: Complete serialized database structure
@@ -53,15 +57,16 @@ class VectorFileStorage:
                 "database": database_data
             }
 
-            json_data = json.dumps(complete_data, indent=2, default=str)
-            compressed_data = gzip.compress(json_data.encode('utf-8'))
+            msgpack_data = msgpack.packb(complete_data, use_bin_type=True)
+            compressed_data = gzip.compress(msgpack_data)
 
             self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(self.file_path, 'wb') as f:
-                f.write(compressed_data)
+            with FileLock(self.lock_path, timeout=10):
+                with open(self.file_path, 'wb') as f:
+                    f.write(compressed_data)
 
-            logger.info(f"Vector database saved to {self.file_path}")
+            logger.info(f"Vector database saved to {self.file_path} (MessagePack + gzip)")
             return True
 
         except Exception as e:
@@ -71,6 +76,7 @@ class VectorFileStorage:
     def load_database(self) -> Optional[Dict[str, Any]]:
         """
         Load the vector database from file.
+        Uses MessagePack for efficient binary deserialization and file locking for safety.
 
         Returns:
             Optional[Dict]: Database data if load succeeded, None otherwise
@@ -81,16 +87,17 @@ class VectorFileStorage:
                 logger.info(f"Database file {self.file_path} does not exist")
                 return None
 
-            with open(self.file_path, 'rb') as f:
-                compressed_data = f.read()
+            with FileLock(self.lock_path, timeout=10):
+                with open(self.file_path, 'rb') as f:
+                    compressed_data = f.read()
 
-            json_data = gzip.decompress(compressed_data).decode('utf-8')
-            complete_data = json.loads(json_data)
+            msgpack_data = gzip.decompress(compressed_data)
+            complete_data = msgpack.unpackb(msgpack_data, raw=False)
 
             self.metadata = complete_data.get("metadata", self.metadata)
             database_data = complete_data.get("database", {})
 
-            logger.info(f"Vector database loaded from {self.file_path}")
+            logger.info(f"Vector database loaded from {self.file_path} (MessagePack + gzip)")
             return database_data
 
         except Exception as e:
