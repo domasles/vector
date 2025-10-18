@@ -57,6 +57,11 @@ class VectorFileStorage:
                 "database": database_data
             }
 
+            # Convert coordinate_map to list of tuples to preserve mixed-type keys
+            if "database" in complete_data and "central_axis" in complete_data["database"]:
+                coord_map = complete_data["database"]["central_axis"].get("coordinate_map", {})
+                complete_data["database"]["central_axis"]["coordinate_map"] = list(coord_map.items())
+
             msgpack_data = msgpack.packb(complete_data, use_bin_type=True)
             compressed_data = gzip.compress(msgpack_data)
 
@@ -92,10 +97,17 @@ class VectorFileStorage:
                     compressed_data = f.read()
 
             msgpack_data = gzip.decompress(compressed_data)
-            complete_data = msgpack.unpackb(msgpack_data, raw=False)
+            complete_data = msgpack.unpackb(msgpack_data, raw=False, strict_map_key=False)
 
             self.metadata = complete_data.get("metadata", self.metadata)
             database_data = complete_data.get("database", {})
+
+            # Convert coordinate_map back from list of tuples to dict
+            if "central_axis" in database_data:
+                coord_map_list = database_data["central_axis"].get("coordinate_map", [])
+
+                if isinstance(coord_map_list, list):
+                    database_data["central_axis"]["coordinate_map"] = dict(coord_map_list)
 
             logger.info(f"Vector database loaded from {self.file_path} (MessagePack + gzip)")
             return database_data

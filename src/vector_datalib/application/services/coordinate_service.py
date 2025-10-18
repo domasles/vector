@@ -242,23 +242,9 @@ class CoordinateService:
         try:
             # Restore central axis
             axis_data = database_data.get("central_axis", {})
+
             self.central_axis.vector_points = axis_data.get("vector_points", [])
-
-            coordinate_map_data = axis_data.get("coordinate_map", {})
-            self.central_axis.coordinate_map = {}
-
-            for key, value in coordinate_map_data.items():
-                try:
-                    int_key = int(key)
-                    self.central_axis.coordinate_map[int_key] = value
-
-                except (ValueError, TypeError):
-                    try:
-                        float_key = float(key)
-                        self.central_axis.coordinate_map[float_key] = value
-
-                    except (ValueError, TypeError):
-                        self.central_axis.coordinate_map[key] = value
+            self.central_axis.coordinate_map = axis_data.get("coordinate_map", {})
 
             # Restore dimensional spaces
             spaces_data = database_data.get("dimensional_spaces", {})

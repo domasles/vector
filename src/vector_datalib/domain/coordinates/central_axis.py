@@ -107,19 +107,5 @@ class CentralAxis:
 
         return VectorPoint(coordinate, value, attributes)
 
-    def bulk_add_vector_points(self, values: List[Any]) -> List[int]:
-        """
-        Add multiple vector points efficiently.
-        New method for batch operations.
-        """
-
-        coordinates = []
-
-        for value in values:
-            coordinate = self.add_vector_point(value)
-            coordinates.append(coordinate)
-
-        return coordinates
-
     def __repr__(self) -> str:
         return f"CentralAxis(points={len(self.vector_points)})"
