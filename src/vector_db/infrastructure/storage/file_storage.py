@@ -134,6 +134,69 @@ class VectorFileStorage:
 
         self.metadata.update(updates)
 
+    def serialize_database_structure(self, central_axis, dimensional_spaces, coordinate_mappings) -> Dict[str, Any]:
+        """
+        Serialize the complete database structure.
+        Moved from main.py to follow DDD principles.
+        """
+
+        return {
+            "central_axis": {
+                "vector_points": central_axis.vector_points,
+                "coordinate_map": central_axis.coordinate_map
+            },
+            "dimensional_spaces": {
+                name: {
+                    "value_domain": space.value_domain,
+                    "value_to_id": space.value_to_id,
+                    "next_id": space.next_id
+                }
+                for name, space in dimensional_spaces.items()
+            },
+            "coordinate_mappings": {
+                name: mapping.coordinate_to_value_id
+                for name, mapping in coordinate_mappings.items()
+            }
+        }
+
+    def load_database_structure(self):
+        """
+        Load and return database structure.
+        Moved from main.py to follow DDD principles.
+        """
+
+        return self.load_database()
+
+    def get_database_stats(self, central_axis, dimensional_spaces) -> Dict[str, Any]:
+        """
+        Get comprehensive database statistics.
+        Moved from main.py to follow DDD principles.
+        """
+
+        return {
+            "vector_points": central_axis.size(),
+            "dimensions": len(dimensional_spaces),
+            "dimension_details": {
+                name: space.get_value_count()
+                for name, space in dimensional_spaces.items()
+            },
+            "file_size_bytes": self.get_file_size(),
+            "metadata": self.get_metadata()
+        }
+
+    def save_with_auto_metadata(self, database_data: Dict[str, Any], central_axis, dimensional_spaces) -> bool:
+        """
+        Save database with automatic metadata updates.
+        Moved from main.py to follow DDD principles.
+        """
+
+        self.update_metadata({
+            "total_vector_points": central_axis.size(),
+            "total_dimensions": len(dimensional_spaces)
+        })
+
+        return self.save_database(database_data)
+
     def __repr__(self) -> str:
         size = self.get_file_size()
         exists = "exists" if self.exists() else "not found"

@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional, List
 
 import logging
 
+from .vector_point import VectorPoint
+
 logger = logging.getLogger(__name__)
 
 class CentralAxis:
@@ -74,6 +76,53 @@ class CentralAxis:
         """Get the number of vector points in the central axis."""
 
         return len(self.vector_points)
+
+    def shift_coordinates_after_insertion(self, coordinate_mappings, from_position: int, shift_amount: int):
+        """
+        Shift all coordinate mappings after insertion.
+        Moved from main.py to follow DDD principles.
+        """
+
+        for mapping in coordinate_mappings.values():
+            mapping.shift_coordinates(from_position, shift_amount)
+
+    def get_vector_point_with_attributes(self, value: Any, dimensional_spaces, coordinate_mappings):
+        """
+        Get complete vector point with all its dimensional attributes.
+        Moved from main.py to follow DDD principles.
+        """
+
+        coordinate = self.get_coordinate(value)
+        if coordinate is None: return None
+
+        attributes = {}
+
+        for dimension_name in dimensional_spaces:
+            if dimension_name not in coordinate_mappings: continue
+
+            value_id = coordinate_mappings[dimension_name].get_mapping(coordinate)
+            if value_id is None: continue
+
+            result = dimensional_spaces[dimension_name].get_value(value_id)
+
+            if result is not None:
+                attributes[dimension_name] = result
+
+        return VectorPoint(coordinate, value, attributes)
+
+    def bulk_add_vector_points(self, values: List[Any]) -> List[int]:
+        """
+        Add multiple vector points efficiently.
+        New method for batch operations.
+        """
+
+        coordinates = []
+
+        for value in values:
+            coordinate = self.add_vector_point(value)
+            coordinates.append(coordinate)
+
+        return coordinates
 
     def __repr__(self) -> str:
         return f"CentralAxis(points={len(self.vector_points)})"
