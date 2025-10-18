@@ -57,8 +57,8 @@ Source = "https://github.com/domasles/vector"
 Documentation = "https://github.com/domasles/vector#readme"
 
 [tool.setuptools.dynamic]
-version = {attr = "vector_db.meta.__version__"}
+version = {attr = "vector_datalib.meta.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vector_db", "vector_db.*"]
+include = ["vector_datalib", "vector_datalib.*"]

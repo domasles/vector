@@ -49,7 +49,7 @@ pip install vector-datalib
 
 ```python
 import asyncio
-from vector_db import VectorDB
+from vector_datalib import VectorDB
 
 async def main():
     # Create database with async context manager
@@ -111,7 +111,7 @@ asyncio.run(advanced_usage())
 Vector follows clean architecture principles with mathematical domain modeling:
 
 ```
-src/vector_db/
+src/vector_datalib/
 ├── domain/
 │   ├── coordinates/            # X-axis coordinate system (primary key)
 │   ├── spaces/                 # Y, Z, J... dimensional spaces  
