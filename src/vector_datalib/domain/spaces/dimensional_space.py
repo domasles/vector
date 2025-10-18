@@ -77,17 +77,9 @@ class DimensionalSpace:
         logger.debug(f"Updated value in dimension '{self.name}': '{old_value}' -> '{new_value}'")
         return True
 
-    def get_all_values(self) -> Set[Any]:
-        """Get all unique values in this dimensional space."""
-        return set(self.value_domain.values())
-
     def get_value_count(self) -> int:
         """Get the number of unique values in this dimensional space."""
         return len(self.value_domain)
-
-    def has_value(self, value: Any) -> bool:
-        """Check if a value exists in this dimensional space."""
-        return value in self.value_to_id
 
     def remove_value_if_unused(self, value_id: int) -> bool:
         """

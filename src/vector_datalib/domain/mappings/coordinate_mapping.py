@@ -46,24 +46,6 @@ class CoordinateMapping:
 
         return self.coordinate_to_value_id.get(x_coordinate)
 
-    def remove_mapping(self, x_coordinate: int) -> bool:
-        """
-        Remove the mapping for a coordinate.
-
-        Args:
-            x_coordinate: The coordinate to remove mapping for
-
-        Returns:
-            bool: True if mapping was removed, False if it didn't exist
-        """
-
-        if x_coordinate in self.coordinate_to_value_id:
-            del self.coordinate_to_value_id[x_coordinate]
-            logger.debug(f"Removed mapping {self.dimension_name}[{x_coordinate}]")
-            return True
-
-        return False
-
     def shift_coordinates(self, from_coordinate: int, shift_amount: int):
         """
         Shift coordinate mappings after central axis insertion/deletion.
@@ -87,18 +69,6 @@ class CoordinateMapping:
 
         self.coordinate_to_value_id = new_mapping
         logger.debug(f"Shifted coordinates in {self.dimension_name} from {from_coordinate} by {shift_amount}")
-
-    def get_all_mappings(self) -> Dict[int, int]:
-        """Get all coordinate mappings."""
-        return self.coordinate_to_value_id.copy()
-
-    def has_mapping(self, x_coordinate: int) -> bool:
-        """Check if a mapping exists for the given coordinate."""
-        return x_coordinate in self.coordinate_to_value_id
-
-    def get_mapped_coordinates(self) -> set:
-        """Get all coordinates that have mappings."""
-        return set(self.coordinate_to_value_id.keys())
 
     def count_references_to_value(self, value_id: int) -> int:
         """Count how many coordinates reference a specific value ID."""
