@@ -76,7 +76,7 @@ class VectorDB:
         return False
 
     async def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
-        """Insert a new vector point with its dimensional attributes."""
+        """Smart insert with collision detection (insert or update if exists)."""
 
         return await self._coordinate_service.insert_with_attributes(vector_value, attributes, position)
 
@@ -96,7 +96,7 @@ class VectorDB:
         return await self._coordinate_service.save_database()
 
     async def batch_insert(self, records: List[tuple]) -> List[int]:
-        """Insert multiple records concurrently."""
+        """Smart batch insert with collision detection (insert or update if exists)."""
 
         return await self._coordinate_service.batch_insert_with_attributes(records)
 

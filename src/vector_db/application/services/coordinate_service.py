@@ -36,29 +36,42 @@ class CoordinateService:
 
     async def insert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """
-        Insert a new vector point with its dimensional attributes.
-        Orchestrates between CentralAxis, DimensionalSpaces, and CoordinateMappings.
+        Smart insert with collision detection (insert or update if exists).
+
+        If vector_value exists: Updates all provided attributes
+        If vector_value is new: Inserts as new vector point
         """
 
-        # Add to central axis first
-        coordinate = self.central_axis.add_vector_point(vector_value, position)
+        existing_coordinate = self.central_axis.get_coordinate(vector_value)
 
-        # Process each dimensional attribute
-        for dimension_name, value in attributes.items():
-            if dimension_name not in self.dimensional_spaces:
-                self._add_dimension(dimension_name)
+        if existing_coordinate is not None:
+            logger.debug(f"Updating existing vector point '{vector_value}' at coordinate {existing_coordinate}")
 
-            # Add value to dimensional space (with deduplication)
-            value_id = self.dimensional_spaces[dimension_name].add_value(value)
-            self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
+            for dimension_name, value in attributes.items():
+                await self.update_coordinate_attribute(vector_value, dimension_name, value)
 
-        if position is not None and position < coordinate:
-            self.central_axis.shift_coordinates_after_insertion(
-                self.coordinate_mappings, position, 1
-            )
+            return existing_coordinate
 
-        logger.debug(f"Inserted vector point '{vector_value}' at coordinate {coordinate}")
-        return coordinate
+        else:
+            logger.debug(f"Inserting new vector point '{vector_value}'")
+
+            # Add to central axis first
+            coordinate = self.central_axis.add_vector_point(vector_value, position)
+
+            # Process each dimensional attribute
+            for dimension_name, value in attributes.items():
+                if dimension_name not in self.dimensional_spaces:
+                    self._add_dimension(dimension_name)
+
+                # Add value to dimensional space (with deduplication)
+                value_id = self.dimensional_spaces[dimension_name].add_value(value)
+                self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
+
+            # Handle coordinate shifting if inserted at specific position
+            if position is not None and position < coordinate:
+                self.central_axis.shift_coordinates_after_insertion(self.coordinate_mappings, position, 1)
+
+            return coordinate
 
     async def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """
@@ -94,7 +107,7 @@ class CoordinateService:
     async def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """
         Update a specific value for a vector point in a dimension.
-        Coordinates between validation, caching, and domain updates.
+        Uses reference counting to safely manage dimensional values.
         """
 
         cache_key = f"{vector_value}:{dimension_name}"
@@ -111,9 +124,24 @@ class CoordinateService:
         if dimension_name not in self.dimensional_spaces:
             self._add_dimension(dimension_name)
 
-        # Update through domain objects
-        value_id = self.dimensional_spaces[dimension_name].add_value(new_value)
-        self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
+        # Get current value_id for this coordinate (if any)
+        old_value_id = self.coordinate_mappings[dimension_name].get_mapping(coordinate)
+        new_value_id = self.dimensional_spaces[dimension_name].get_value_id(new_value)
+
+        if new_value_id is not None:
+            self.coordinate_mappings[dimension_name].set_mapping(coordinate, new_value_id)
+
+        else:
+            new_value_id = self.dimensional_spaces[dimension_name].add_value(new_value)
+            self.coordinate_mappings[dimension_name].set_mapping(coordinate, new_value_id)
+
+        # Clean up old value if no other coordinates reference it
+        if old_value_id is not None and old_value_id != new_value_id:
+            ref_count = self.coordinate_mappings[dimension_name].count_references_to_value(old_value_id)
+
+            if ref_count == 0:
+                self.dimensional_spaces[dimension_name].remove_value_if_unused(old_value_id)
+                logger.debug(f"Cleaned up unused value (ID {old_value_id}) from dimension '{dimension_name}'")
 
         logger.debug(f"Updated {vector_value}:{dimension_name} = {new_value}")
         return True
@@ -214,9 +242,23 @@ class CoordinateService:
         try:
             # Restore central axis
             axis_data = database_data.get("central_axis", {})
-
             self.central_axis.vector_points = axis_data.get("vector_points", [])
-            self.central_axis.coordinate_map = axis_data.get("coordinate_map", {})
+
+            coordinate_map_data = axis_data.get("coordinate_map", {})
+            self.central_axis.coordinate_map = {}
+
+            for key, value in coordinate_map_data.items():
+                try:
+                    int_key = int(key)
+                    self.central_axis.coordinate_map[int_key] = value
+
+                except (ValueError, TypeError):
+                    try:
+                        float_key = float(key)
+                        self.central_axis.coordinate_map[float_key] = value
+
+                    except (ValueError, TypeError):
+                        self.central_axis.coordinate_map[key] = value
 
             # Restore dimensional spaces
             spaces_data = database_data.get("dimensional_spaces", {})
@@ -226,9 +268,11 @@ class CoordinateService:
 
                 # Convert string keys back to integers for value_domain
                 space.value_domain = {int(k): v for k, v in space_data.get("value_domain", {}).items()}
-                space.value_to_id = space_data.get("value_to_id", {})
-                space.next_id = space_data.get("next_id", 1)
 
+                # Rebuild value_to_id from value_domain (ensures consistency)
+                space.value_to_id = {v: int(k) for k, v in space_data.get("value_domain", {}).items()}
+
+                space.next_id = space_data.get("next_id", 1)
                 self.dimensional_spaces[name] = space
 
             # Restore coordinate mappings
@@ -289,5 +333,5 @@ class CoordinateService:
         if dimension_name not in self.dimensional_spaces:
             self.dimensional_spaces[dimension_name] = DimensionalSpace(dimension_name)
             self.coordinate_mappings[dimension_name] = CoordinateMapping(dimension_name)
-            
+
             logger.info(f"Added new dimension: '{dimension_name}'")

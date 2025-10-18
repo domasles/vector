@@ -17,7 +17,7 @@ class CoordinateMapping:
 
     def __init__(self, dimension_name: str):
         self.dimension_name = dimension_name
-        self.coordinate_to_value_id: Dict[int, int] = {}  # x_coordinate -> value_id
+        self.coordinate_to_value_id: Dict[int, int] = {}
 
     def set_mapping(self, x_coordinate: int, value_id: int):
         """
@@ -102,6 +102,11 @@ class CoordinateMapping:
         """Get all coordinates that have mappings."""
 
         return set(self.coordinate_to_value_id.keys())
+
+    def count_references_to_value(self, value_id: int) -> int:
+        """Count how many coordinates reference a specific value ID."""
+
+        return sum(1 for vid in self.coordinate_to_value_id.values() if vid == value_id)
 
     def __repr__(self) -> str:
         return f"CoordinateMapping(dimension='{self.dimension_name}', mappings={len(self.coordinate_to_value_id)})"

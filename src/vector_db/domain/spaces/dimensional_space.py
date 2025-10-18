@@ -94,5 +94,29 @@ class DimensionalSpace:
 
         return value in self.value_to_id
 
+    def remove_value_if_unused(self, value_id: int) -> bool:
+        """
+        Safely remove a value from the domain if it's not referenced.
+        WARNING: Only call this after verifying no coordinates reference this value_id!
+
+        Args:
+            value_id: The value ID to remove
+
+        Returns:
+            bool: True if value was removed, False if it didn't exist
+        """
+
+        if value_id in self.value_domain:
+            old_value = self.value_domain[value_id]
+            del self.value_domain[value_id]
+
+            if old_value in self.value_to_id:
+                del self.value_to_id[old_value]
+
+            logger.debug(f"Removed unused value '{old_value}' (ID {value_id}) from dimension '{self.name}'")
+            return True
+
+        return False
+
     def __repr__(self) -> str:
         return f"DimensionalSpace(name='{self.name}', values={self.get_value_count()})"
