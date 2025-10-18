@@ -220,7 +220,7 @@ async with VectorDB("data.db") as db:
 ```json
 {
   "metadata": {
-    "version": "1.0.1-beta",
+    "version": "1.1.0-beta",
     "created_at": "2025-01-XX",
     "coordinate_count": 1000
   },

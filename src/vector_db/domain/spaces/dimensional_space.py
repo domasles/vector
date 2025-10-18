@@ -47,12 +47,10 @@ class DimensionalSpace:
 
     def get_value(self, value_id: int) -> Optional[Any]:
         """Get the value for a given ID in the value domain."""
-
         return self.value_domain.get(value_id)
 
     def get_value_id(self, value: Any) -> Optional[int]:
         """Get the ID for a given value in the value domain."""
-
         return self.value_to_id.get(value)
 
     def update_value(self, old_value: Any, new_value: Any) -> bool:
@@ -81,17 +79,14 @@ class DimensionalSpace:
 
     def get_all_values(self) -> Set[Any]:
         """Get all unique values in this dimensional space."""
-
         return set(self.value_domain.values())
 
     def get_value_count(self) -> int:
         """Get the number of unique values in this dimensional space."""
-
         return len(self.value_domain)
 
     def has_value(self, value: Any) -> bool:
         """Check if a value exists in this dimensional space."""
-
         return value in self.value_to_id
 
     def remove_value_if_unused(self, value_id: int) -> bool:

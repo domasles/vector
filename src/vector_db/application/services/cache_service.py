@@ -10,9 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class CacheService:
-    """
-    LRU cache service for database lookups.
-    """
+    """LRU cache service for database lookups."""
 
     def __init__(self, max_size: int = 1000):
         """
@@ -75,17 +73,14 @@ class CacheService:
 
     def clear(self):
         """Clear all cached items."""
-
         self._cache.clear()
 
     def size(self) -> int:
         """Get current cache size."""
-
         return len(self._cache)
 
     def is_full(self) -> bool:
         """Check if cache is at maximum capacity."""
-
         return len(self._cache) >= self._max_size
 
     def get_stats(self) -> Dict[str, Any]:

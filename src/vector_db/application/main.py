@@ -32,6 +32,7 @@ class VectorDB:
         Args:
             database_path: Path to the .db file (created if doesn't exist)
         """
+
         self.database_path = database_path
         self._initialized = False
 
@@ -54,6 +55,7 @@ class VectorDB:
 
     async def __aenter__(self):
         """Async context manager entry."""
+
         if not self._initialized:
             await self._coordinate_service.load_database_structure()
             self._initialized = True
@@ -77,57 +79,46 @@ class VectorDB:
 
     async def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """Smart insert with collision detection (insert or update if exists)."""
-
         return await self._coordinate_service.insert_with_attributes(vector_value, attributes, position)
 
     async def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """Look up a value for a vector point in a specific dimension."""
-
         return await self._coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
 
     async def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """Update a specific value for a vector point in a dimension."""
-
         return await self._coordinate_service.update_coordinate_attribute(vector_value, dimension_name, new_value)
 
     async def save(self) -> bool:
         """Save the database to file."""
-
         return await self._coordinate_service.save_database()
 
     async def batch_insert(self, records: List[tuple]) -> List[int]:
         """Smart batch insert with collision detection (insert or update if exists)."""
-
         return await self._coordinate_service.batch_insert_with_attributes(records)
 
     async def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
         """Perform multiple lookups concurrently."""
-
         return await self._coordinate_service.batch_lookup_coordinates(queries)
 
     async def batch_update(self, updates: List[tuple]) -> int:
         """Perform multiple updates efficiently."""
-
         return await self._coordinate_service.batch_update_coordinates(updates)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-
         return self._coordinate_service.get_database_statistics()
 
     def get_vector_point(self, vector_value: Any):
         """Get complete vector point with all its dimensional attributes."""
-
         return self._coordinate_service.get_vector_point_complete(vector_value)
 
     def get_all_vector_points(self) -> List:
         """Get all vector points with their complete attribute sets."""
-
         return self._coordinate_service.get_all_vector_points_complete()
 
     def get_dimensions(self) -> List[str]:
         """Get all dimensional space names."""
-
         return self._coordinate_service.get_dimensions_list()
 
     def __repr__(self) -> str:

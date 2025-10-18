@@ -321,7 +321,6 @@ class CoordinateService:
 
     def get_dimensions_list(self) -> List[str]:
         """Get all dimensional space names."""
-
         return list(self.dimensional_spaces.keys())
 
     def _add_dimension(self, dimension_name: str):

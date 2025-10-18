@@ -23,22 +23,18 @@ class VectorPoint:
 
     def get_attribute(self, dimension_name: str) -> Optional[Any]:
         """Get the value for a specific dimensional attribute."""
-
         return self.attributes.get(dimension_name)
 
     def set_attribute(self, dimension_name: str, value: Any):
         """Set the value for a specific dimensional attribute."""
-
         self.attributes[dimension_name] = value
 
     def has_attribute(self, dimension_name: str) -> bool:
         """Check if this vector point has a value for the given dimension."""
-
         return dimension_name in self.attributes
 
     def get_all_attributes(self) -> Dict[str, Any]:
         """Get all dimensional attributes for this vector point."""
-
         return self.attributes.copy()
 
     def __repr__(self) -> str:

@@ -56,7 +56,6 @@ class CentralAxis:
 
     def get_coordinate(self, value: Any) -> Optional[int]:
         """Get the coordinate index for a given vector point value."""
-
         return self.coordinate_map.get(value)
 
     def get_vector_point(self, coordinate: int) -> Optional[Any]:
@@ -69,12 +68,10 @@ class CentralAxis:
 
     def get_all_points(self) -> List[Any]:
         """Get all vector points in coordinate order."""
-
         return self.vector_points.copy()
 
     def size(self) -> int:
         """Get the number of vector points in the central axis."""
-
         return len(self.vector_points)
 
     def shift_coordinates_after_insertion(self, coordinate_mappings, from_position: int, shift_amount: int):

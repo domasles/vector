@@ -90,22 +90,18 @@ class CoordinateMapping:
 
     def get_all_mappings(self) -> Dict[int, int]:
         """Get all coordinate mappings."""
-
         return self.coordinate_to_value_id.copy()
 
     def has_mapping(self, x_coordinate: int) -> bool:
         """Check if a mapping exists for the given coordinate."""
-
         return x_coordinate in self.coordinate_to_value_id
 
     def get_mapped_coordinates(self) -> set:
         """Get all coordinates that have mappings."""
-
         return set(self.coordinate_to_value_id.keys())
 
     def count_references_to_value(self, value_id: int) -> int:
         """Count how many coordinates reference a specific value ID."""
-
         return sum(1 for vid in self.coordinate_to_value_id.values() if vid == value_id)
 
     def __repr__(self) -> str:
