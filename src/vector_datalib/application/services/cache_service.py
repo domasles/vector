@@ -3,7 +3,8 @@ Cache Service - Handles LRU caching for Vector Database lookups.
 Follows DDD separation of concerns.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Optional, Dict
+from collections import OrderedDict
 
 import logging
 
@@ -20,7 +21,7 @@ class CacheService:
             max_size: Maximum number of items to cache
         """
 
-        self._cache: Dict[str, Any] = {}
+        self._cache: OrderedDict[str, Any] = OrderedDict()
         self._max_size = max_size
 
     def get(self, key: str) -> Optional[Any]:
@@ -36,9 +37,8 @@ class CacheService:
 
         if key in self._cache:
             # Move to end (most recently used)
-            value = self._cache.pop(key)
-            self._cache[key] = value
-            return value
+            self._cache.move_to_end(key)
+            return self._cache[key]
 
         return None
 
@@ -51,25 +51,15 @@ class CacheService:
             value: Value to cache
         """
 
-        if len(self._cache) >= self._max_size:
-            # Remove least recently used (first item)
-            oldest_key = next(iter(self._cache))
-            del self._cache[oldest_key]
-
+        # If key exists, move to end; otherwise add new
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        
         self._cache[key] = value
-
-    def invalidate(self, key: str) -> bool:
-        """
-        Remove specific key from cache.
-
-        Args:
-            key: Cache key to remove
-
-        Returns:
-            True if key was found and removed
-        """
-
-        return self._cache.pop(key, None) is not None
+        
+        # Evict oldest if over capacity
+        if len(self._cache) > self._max_size:
+            self._cache.popitem(last=False)
 
     def clear(self):
         """Clear all cached items."""

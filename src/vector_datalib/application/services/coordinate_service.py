@@ -109,8 +109,7 @@ class CoordinateService:
         Uses reference counting to safely manage dimensional values.
         """
 
-        cache_key = f"{vector_value}:{dimension_name}"
-        self.cache_service.invalidate(cache_key)
+        self.cache_service.clear()
         
         # Get coordinate
         coordinate = self.central_axis.get_coordinate(vector_value)
