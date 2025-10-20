@@ -109,7 +109,10 @@ class CoordinateService:
         Uses reference counting to safely manage dimensional values.
         """
 
-        self.cache_service.clear()
+        cache_key = f"{vector_value}:{dimension_name}"
+
+        if cache_key in self.cache_service._cache:
+            del self.cache_service._cache[cache_key]
         
         # Get coordinate
         coordinate = self.central_axis.get_coordinate(vector_value)
@@ -150,7 +153,6 @@ class CoordinateService:
         Orchestrates batch operations with proper cache management.
         """
 
-        self.cache_service.clear()
         coordinates = []
 
         for record in records:
@@ -190,7 +192,6 @@ class CoordinateService:
         Coordinates batch updates with proper error handling.
         """
 
-        self.cache_service.clear()
         successful_updates = 0
 
         for vector_value, dimension_name, new_value in updates:
@@ -296,6 +297,52 @@ class CoordinateService:
     def get_dimensions_list(self) -> List[str]:
         """Get all dimensional space names."""
         return list(self.dimensional_spaces.keys())
+
+    def verify_integrity(self) -> Dict[str, Any]:
+        """
+        Verify data integrity and return statistics.
+
+        Returns:
+            Dictionary with integrity check results:
+            - total_coordinates: Number of vector points
+            - dimensions: Number of dimensions
+            - total_values: Sum of unique values across dimensions
+            - cache_size: Current cache size
+            - corrupted: True if any integrity issues found
+            - issues: List of detected problems (if any)
+        """
+
+        stats = {
+            "total_coordinates": len(self.central_axis.vector_points),
+            "dimensions": len(self.dimensional_spaces),
+            "total_values": sum(
+                len(space.value_domain) 
+                for space in self.dimensional_spaces.values()
+            ),
+            "cache_size": self.cache_service.size(),
+            "corrupted": False,
+            "issues": []
+        }
+
+        # Check for orphaned mappings
+        for vector_value in self.central_axis.vector_points:
+            coord = self.central_axis.get_coordinate(vector_value)
+
+            for dim_name, space in self.dimensional_spaces.items():
+                if coord not in self.coordinate_mappings[dim_name].coordinate_to_value_id:
+                    stats["corrupted"] = True
+                    stats["issues"].append(f"Coordinate {coord} missing mapping in dimension '{dim_name}'")
+
+        # Check for invalid value references
+        for dim_name, mapping in self.coordinate_mappings.items():
+            space = self.dimensional_spaces[dim_name]
+
+            for coord, value_id in mapping.coordinate_to_value_id.items():
+                if value_id not in space.value_domain:
+                    stats["corrupted"] = True
+                    stats["issues"].append(f"Invalid value_id {value_id} in dimension '{dim_name}'")
+
+        return stats
 
     def _add_dimension(self, dimension_name: str):
         """

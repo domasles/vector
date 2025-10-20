@@ -39,7 +39,8 @@ class VectorDB:
 
         self.database_path = database_path
         self.__initialized = False
-        self.__lock = threading.RLock()  # Thread-safe reentrant lock
+        self.__closed = False
+        self.__lock = threading.RLock()
 
         # Initialize infrastructure and domain objects
         self.__storage = VectorFileStorage(database_path)
@@ -73,6 +74,8 @@ class VectorDB:
         """Context manager exit - auto-save and cleanup."""
 
         with self.__lock:
+            self.__closed = True
+
             try:
                 self.__coordinate_service.save_database()
 
@@ -85,46 +88,74 @@ class VectorDB:
 
         return False
 
+    def _check_closed(self):
+        """Raise RuntimeError if database is closed."""
+
+        if self.__closed:
+            raise RuntimeError("Cannot operate on closed database. Use 'with VectorDB()' context manager.")
+
     def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """Smart insert with collision detection (insert or update if exists)."""
 
+        if not isinstance(attributes, dict):
+            raise TypeError(f"Attributes must be dict, got {type(attributes).__name__}")
+
+        if not attributes:
+            raise ValueError("Attributes dictionary cannot be empty")
+
+        if position is not None and not isinstance(position, int):
+            raise TypeError(f"Position must be int or None, got {type(position).__name__}")
+
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.insert_with_attributes(vector_value, attributes, position)
 
     def lookup(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """Look up a value for a vector point in a specific dimension."""
 
+        if not isinstance(dimension_name, str):
+            raise TypeError(f"Dimension name must be str, got {type(dimension_name).__name__}")
+
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
 
     def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """Update a specific value for a vector point in a dimension."""
 
+        if not isinstance(dimension_name, str):
+            raise TypeError(f"Dimension name must be str, got {type(dimension_name).__name__}")
+
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.update_coordinate_attribute(vector_value, dimension_name, new_value)
 
     def save(self) -> bool:
         """Save the database to file."""
 
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.save_database()
 
     def batch_insert(self, records: List[tuple]) -> List[int]:
         """Smart batch insert with collision detection (insert or update if exists)."""
 
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.batch_insert_with_attributes(records)
 
     def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
         """Perform multiple lookups efficiently."""
 
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.batch_lookup_coordinates(queries)
 
     def batch_update(self, updates: List[tuple]) -> int:
         """Perform multiple updates efficiently."""
 
         with self.__lock:
+            self._check_closed()
             return self.__coordinate_service.batch_update_coordinates(updates)
 
     def get_stats(self) -> Dict[str, Any]:
@@ -151,6 +182,12 @@ class VectorDB:
         with self.__lock:
             return self.__coordinate_service.get_dimensions_list()
 
+    def verify(self) -> Dict[str, Any]:
+        """Verify data integrity and return statistics."""
+
+        with self.__lock:
+            return self.__coordinate_service.verify_integrity()
+
     @property
     def vector_count(self) -> int:
         """Get the number of vector points in the database"""
@@ -164,6 +201,16 @@ class VectorDB:
 
         with self.__lock:
             return len(self.__dimensional_spaces)
+
+    def __len__(self) -> int:
+        """Return number of vectors in database."""
+        return self.vector_count
+
+    def __contains__(self, vector_value: Any) -> bool:
+        """Check if vector_value exists in database."""
+
+        with self.__lock:
+            return self.__central_axis.get_coordinate(vector_value) is not None
 
     def __repr__(self) -> str:
         with self.__lock:
