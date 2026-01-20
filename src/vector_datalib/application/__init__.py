@@ -2,4 +2,4 @@
 
 from .main import VectorDB
 
-__all__ = ['VectorDB']
+__all__ = ["VectorDB"]

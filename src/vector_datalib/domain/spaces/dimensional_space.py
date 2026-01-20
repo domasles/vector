@@ -9,6 +9,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class DimensionalSpace:
     """
     A dimensional space representing an attribute axis (Y, Z, J, etc.).
@@ -18,7 +19,7 @@ class DimensionalSpace:
     def __init__(self, name: str):
         self.name = name
         self.value_domain: Dict[int, Any] = {}  # id -> value mapping
-        self.value_to_id: Dict[Any, int] = {}   # value -> id reverse lookup
+        self.value_to_id: Dict[Any, int] = {}  # value -> id reverse lookup
         self.next_id = 1  # Auto-incrementing ID counter
 
     def add_value(self, value: Any) -> int:
@@ -33,7 +34,8 @@ class DimensionalSpace:
             int: The unique ID for this value in the domain
         """
 
-        if value in self.value_to_id: return self.value_to_id[value]
+        if value in self.value_to_id:
+            return self.value_to_id[value]
 
         # Add new value to domain
         value_id = self.next_id
@@ -66,7 +68,8 @@ class DimensionalSpace:
         """
 
         value_id = self.value_to_id.get(old_value)
-        if value_id is None: return False
+        if value_id is None:
+            return False
 
         # Update both mappings
         del self.value_to_id[old_value]

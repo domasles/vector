@@ -13,6 +13,7 @@ from ...domain.mappings import CoordinateMapping
 
 logger = logging.getLogger(__name__)
 
+
 class CoordinateService:
     """Service layer that orchestrates coordinate operations between domain objects."""
 
@@ -23,7 +24,7 @@ class CoordinateService:
         Args:
             central_axis: CentralAxis domain object
             dimensional_spaces: Dict of DimensionalSpace objects
-            coordinate_mappings: Dict of CoordinateMapping objects  
+            coordinate_mappings: Dict of CoordinateMapping objects
             storage: VectorFileStorage infrastructure
             cache_service: CacheService for LRU caching
         """
@@ -34,18 +35,20 @@ class CoordinateService:
         self.storage = storage
         self.cache_service = cache_service
 
-    async def upsert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
+    async def upsert_with_attributes(
+        self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None
+    ) -> int:
         """
         Upsert (insert or update) with attributes.
 
         If vector_value exists: Updates all provided attributes
         If vector_value is new: Inserts as new vector point
-        
+
         Args:
             vector_value: The vector point value
             attributes: Dict of dimension -> value mappings
             position: Optional insertion position (only used for new inserts)
-            
+
         Returns:
             int: The coordinate of the vector point
         """
@@ -114,20 +117,25 @@ class CoordinateService:
         cache_key = f"{vector_value}:{dimension_name}"
         cached_result = await self.cache_service.get(cache_key)
 
-        if cached_result is not None: return cached_result
+        if cached_result is not None:
+            return cached_result
 
         # Get coordinate from central axis
         coordinate = self.central_axis.get_coordinate(vector_value)
-        if coordinate is None: return None
+        if coordinate is None:
+            return None
 
         # Get value_id from coordinate mapping
-        if dimension_name not in self.coordinate_mappings: return None
+        if dimension_name not in self.coordinate_mappings:
+            return None
 
         value_id = self.coordinate_mappings[dimension_name].get_mapping(coordinate)
-        if value_id is None: return None
+        if value_id is None:
+            return None
 
         # Get value from dimensional space
-        if dimension_name not in self.dimensional_spaces: return None
+        if dimension_name not in self.dimensional_spaces:
+            return None
         result = self.dimensional_spaces[dimension_name].get_value(value_id)
 
         # Cache the result
@@ -141,10 +149,10 @@ class CoordinateService:
         Delete a vector point and clean up all dimensional mappings.
         Uses reference counting to safely remove unused values.
         Uses tombstoning (O(1)) - no coordinate shifting needed.
-        
+
         Args:
             vector_value: The vector point to delete
-            
+
         Returns:
             bool: True if deleted, False if not found
         """
@@ -153,32 +161,32 @@ class CoordinateService:
         if coordinate is None:
             logger.warning(f"Vector point {vector_value} not found for deletion")
             return False
-        
+
         # Invalidate all cache entries for this vector point
         for dimension_name in self.dimensional_spaces.keys():
             cache_key = f"{vector_value}:{dimension_name}"
             await self.cache_service.invalidate(cache_key)
-        
+
         # Clean up dimensional mappings and values
         for dimension_name, mapping in self.coordinate_mappings.items():
             # Get the value_id that this coordinate references
             value_id = mapping.get_mapping(coordinate)
-            
+
             if value_id is not None:
                 # Remove the mapping
                 mapping.remove_mapping(coordinate)
-                
+
                 # Check if any other coordinates reference this value
                 ref_count = mapping.count_references_to_value(value_id)
-                
+
                 # If no more references, remove the value from dimensional space
                 if ref_count == 0:
                     self.dimensional_spaces[dimension_name].remove_value_if_unused(value_id)
                     logger.debug(f"Cleaned up unused value (ID {value_id}) from dimension '{dimension_name}'")
-        
+
         # Tombstone in central axis (O(1) - no shifting)
         self.central_axis.remove_vector_point(vector_value)
-        
+
         logger.info(f"Deleted vector point '{vector_value}' at coordinate {coordinate}")
         return True
 
@@ -192,9 +200,7 @@ class CoordinateService:
             self.central_axis, self.dimensional_spaces, self.coordinate_mappings
         )
 
-        return await self.storage.save_with_auto_metadata(
-            database_data, self.central_axis, self.dimensional_spaces
-        )
+        return await self.storage.save_with_auto_metadata(database_data, self.central_axis, self.dimensional_spaces)
 
     async def load_database_structure(self):
         """
@@ -203,7 +209,8 @@ class CoordinateService:
         """
 
         database_data = await self.storage.load_database_structure()
-        if database_data is None: return
+        if database_data is None:
+            return
 
         try:
             # Restore central axis
@@ -214,7 +221,7 @@ class CoordinateService:
 
             # Restore dimensional spaces
             spaces_data = database_data.get("dimensional_spaces", {})
-            
+
             for name, space_data in spaces_data.items():
                 space = DimensionalSpace(name)
 
@@ -256,7 +263,9 @@ class CoordinateService:
         Delegates to enhanced CentralAxis.
         """
 
-        return self.central_axis.get_vector_point_with_attributes(vector_value, self.dimensional_spaces, self.coordinate_mappings)
+        return self.central_axis.get_vector_point_with_attributes(
+            vector_value, self.dimensional_spaces, self.coordinate_mappings
+        )
 
     def get_all_vector_points_complete(self) -> List:
         """Get all vector points with their complete attribute sets."""
@@ -286,4 +295,3 @@ class CoordinateService:
             self.coordinate_mappings[dimension_name] = CoordinateMapping(dimension_name)
 
             logger.info(f"Added new dimension: '{dimension_name}'")
-

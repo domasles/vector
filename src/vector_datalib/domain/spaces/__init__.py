@@ -2,4 +2,4 @@
 
 from .dimensional_space import DimensionalSpace
 
-__all__ = ['DimensionalSpace']
+__all__ = ["DimensionalSpace"]

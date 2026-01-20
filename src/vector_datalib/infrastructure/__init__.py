@@ -2,4 +2,4 @@
 
 from .storage import VectorFileStorage
 
-__all__ = ['VectorFileStorage']
+__all__ = ["VectorFileStorage"]

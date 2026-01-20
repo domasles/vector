@@ -1,5 +1,5 @@
 """
-Coordinate Mapping - The f_axis(x_coordinate) functions that connect the central axis 
+Coordinate Mapping - The f_axis(x_coordinate) functions that connect the central axis
 to dimensional spaces. These form the "propeller blades" radiating from the central hub.
 """
 
@@ -8,6 +8,7 @@ from typing import Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class CoordinateMapping:
     """
@@ -50,13 +51,14 @@ class CoordinateMapping:
         """
         Shift coordinate mappings after central axis insertion/deletion.
         Updates all coordinates >= from_coordinate by shift_amount.
-        
+
         Args:
             from_coordinate: The coordinate position to start shifting from
             shift_amount: How much to shift (+1 for insertion, -1 for deletion)
         """
 
-        if shift_amount == 0: return
+        if shift_amount == 0:
+            return
         new_mapping = {}
 
         for coord, value_id in self.coordinate_to_value_id.items():
@@ -77,10 +79,10 @@ class CoordinateMapping:
     def remove_mapping(self, x_coordinate: int) -> bool:
         """
         Remove the mapping for a coordinate.
-        
+
         Args:
             x_coordinate: The coordinate to remove the mapping for
-            
+
         Returns:
             bool: True if mapping was removed, False if it didn't exist
         """

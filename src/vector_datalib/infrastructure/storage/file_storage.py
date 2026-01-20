@@ -16,6 +16,7 @@ from pathlib import Path
 try:
     import aiofiles
     import aiofiles.os
+
     AIOFILES_AVAILABLE = True
 except ImportError:
     AIOFILES_AVAILABLE = False
@@ -23,6 +24,7 @@ except ImportError:
 from ...meta import __version__
 
 logger = logging.getLogger(__name__)
+
 
 class VectorFileStorage:
     """Async-first single-file storage system for Vector Database."""
@@ -36,7 +38,7 @@ class VectorFileStorage:
             "created_at": None,
             "last_modified": None,
             "total_vector_points": 0,
-            "total_dimensions": 0
+            "total_dimensions": 0,
         }
 
     def _get_async_lock(self):
@@ -67,10 +69,7 @@ class VectorFileStorage:
 
             self.metadata["last_modified"] = now
 
-            complete_data = {
-                "metadata": self.metadata,
-                "database": database_data
-            }
+            complete_data = {"metadata": self.metadata, "database": database_data}
 
             # Convert coordinate_map to list of tuples to preserve mixed-type keys
             if "database" in complete_data and "central_axis" in complete_data["database"]:
@@ -79,10 +78,10 @@ class VectorFileStorage:
 
             # Serialize in thread pool to avoid blocking event loop
             loop = asyncio.get_event_loop()
-            
+
             def _packb():
                 return msgpack.packb(complete_data, use_bin_type=True)
-            
+
             msgpack_data = await loop.run_in_executor(None, _packb)
             compressed_data = await loop.run_in_executor(None, gzip.compress, msgpack_data)
 
@@ -91,7 +90,7 @@ class VectorFileStorage:
 
             # Write file with async lock
             async with self._get_async_lock():
-                async with aiofiles.open(self.file_path, 'wb') as f:
+                async with aiofiles.open(self.file_path, "wb") as f:
                     await f.write(compressed_data)
 
             logger.info(f"Vector database saved to {self.file_path}")
@@ -119,16 +118,16 @@ class VectorFileStorage:
 
             # Read file with async lock
             async with self._get_async_lock():
-                async with aiofiles.open(self.file_path, 'rb') as f:
+                async with aiofiles.open(self.file_path, "rb") as f:
                     compressed_data = await f.read()
 
             # Decompress and deserialize in thread pool
             loop = asyncio.get_event_loop()
             msgpack_data = await loop.run_in_executor(None, gzip.decompress, compressed_data)
-            
+
             def _unpackb():
                 return msgpack.unpackb(msgpack_data, raw=False, strict_map_key=False)
-            
+
             complete_data = await loop.run_in_executor(None, _unpackb)
 
             self.metadata = complete_data.get("metadata", self.metadata)
@@ -165,7 +164,7 @@ class VectorFileStorage:
             except Exception as e:
                 logger.error(f"Failed to delete database file: {e}")
                 return False
-        
+
         try:
             if await self.exists():
                 await aiofiles.os.remove(self.file_path)
@@ -203,20 +202,15 @@ class VectorFileStorage:
         return {
             "central_axis": {
                 "vector_points": central_axis.vector_points,
-                "coordinate_map": central_axis.coordinate_map
+                "coordinate_map": central_axis.coordinate_map,
             },
             "dimensional_spaces": {
-                name: {
-                    "value_domain": space.value_domain,
-                    "value_to_id": space.value_to_id,
-                    "next_id": space.next_id
-                }
+                name: {"value_domain": space.value_domain, "value_to_id": space.value_to_id, "next_id": space.next_id}
                 for name, space in dimensional_spaces.items()
             },
             "coordinate_mappings": {
-                name: mapping.coordinate_to_value_id
-                for name, mapping in coordinate_mappings.items()
-            }
+                name: mapping.coordinate_to_value_id for name, mapping in coordinate_mappings.items()
+            },
         }
 
     async def load_database_structure(self):
@@ -234,22 +228,16 @@ class VectorFileStorage:
         return {
             "vector_points": central_axis.size(),
             "dimensions": len(dimensional_spaces),
-            "dimension_details": {
-                name: space.get_value_count()
-                for name, space in dimensional_spaces.items()
-            },
+            "dimension_details": {name: space.get_value_count() for name, space in dimensional_spaces.items()},
             "file_size_bytes": self.get_file_size(),
-            "metadata": self.get_metadata()
+            "metadata": self.get_metadata(),
         }
 
     async def save_with_auto_metadata(self, database_data: Dict[str, Any], central_axis, dimensional_spaces) -> bool:
         """
         Save database with automatic metadata updates asynchronously.
         """
-        self.update_metadata({
-            "total_vector_points": central_axis.size(),
-            "total_dimensions": len(dimensional_spaces)
-        })
+        self.update_metadata({"total_vector_points": central_axis.size(), "total_dimensions": len(dimensional_spaces)})
 
         return await self.save_database(database_data)
 

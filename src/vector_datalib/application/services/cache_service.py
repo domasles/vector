@@ -11,6 +11,7 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+
 class CacheService:
     """Async-safe LRU cache service for database lookups."""
 
@@ -58,9 +59,9 @@ class CacheService:
             # If key exists, move to end; otherwise add new
             if key in self._cache:
                 self._cache.move_to_end(key)
-            
+
             self._cache[key] = value
-            
+
             # Evict oldest if over capacity
             if len(self._cache) > self._max_size:
                 self._cache.popitem(last=False)
@@ -93,7 +94,7 @@ class CacheService:
         return {
             "current_size": len(self._cache),
             "max_size": self._max_size,
-            "utilization": len(self._cache) / self._max_size * 100
+            "utilization": len(self._cache) / self._max_size * 100,
         }
 
     def __repr__(self) -> str:

@@ -19,6 +19,7 @@ from ..infrastructure.storage import VectorFileStorage
 
 logger = logging.getLogger(__name__)
 
+
 class VectorDB:
     """
     Vector Database - Coordinate-based database system with async-first API.
@@ -54,16 +55,16 @@ class VectorDB:
         # Initialize service layer
         self.__coordinate_service = CoordinateService(
             self.__central_axis,
-            self.__dimensional_spaces, 
+            self.__dimensional_spaces,
             self.__coordinate_mappings,
             self.__storage,
-            self.__cache_service
+            self.__cache_service,
         )
 
     async def __aenter__(self):
         """Async context manager entry."""
         self.__lock = asyncio.Lock()
-        
+
         async with self.__lock:
             if not self.__initialized:
                 await self.__coordinate_service.load_database_structure()
@@ -124,7 +125,7 @@ class VectorDB:
 
         if self.__lock is None:
             raise RuntimeError("save() requires using 'async with' context manager")
-        
+
         async with self.__lock:
             self._check_closed()
             return await self.__coordinate_service.save_database()
@@ -132,7 +133,7 @@ class VectorDB:
     async def batch_upsert(self, records: List[tuple]) -> List[int]:
         """Batch upsert vector points concurrently (insert or update)."""
         self._check_closed()
-        
+
         async def _upsert_single(record):
             if len(record) == 2:
                 vector_value, attributes = record
@@ -140,10 +141,12 @@ class VectorDB:
             elif len(record) == 3:
                 vector_value, attributes, position = record
             else:
-                raise ValueError("Each record must be (vector_value, attributes) or (vector_value, attributes, position)")
-            
+                raise ValueError(
+                    "Each record must be (vector_value, attributes) or (vector_value, attributes, position)"
+                )
+
             return await self.__coordinate_service.upsert_with_attributes(vector_value, attributes, position)
-        
+
         tasks = [_upsert_single(record) for record in records]
         coordinates = await asyncio.gather(*tasks)
         return list(coordinates)
@@ -151,7 +154,7 @@ class VectorDB:
     async def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
         """Perform multiple lookups concurrently."""
         self._check_closed()
-        
+
         tasks = [
             self.__coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
             for vector_value, dimension_name in queries
@@ -161,10 +164,10 @@ class VectorDB:
     async def delete(self, vector_value: Any) -> bool:
         """
         Delete a vector point and all its dimensional mappings.
-        
+
         Args:
             vector_value: The vector point to delete
-            
+
         Returns:
             bool: True if deleted, False if not found
         """
@@ -174,25 +177,25 @@ class VectorDB:
     async def batch_delete(self, vector_values: List[Any]) -> int:
         """
         Delete multiple vector points concurrently.
-        
+
         Args:
             vector_values: List of vector point values to delete
-            
+
         Returns:
             int: Number of successfully deleted vector points
         """
         self._check_closed()
-        
+
         async def _delete_single(vector_value):
             try:
                 return await self.__coordinate_service.delete_coordinate(vector_value)
             except Exception as e:
                 logger.warning(f"Failed to delete {vector_value} - {e}")
                 return False
-        
+
         tasks = [_delete_single(vector_value) for vector_value in vector_values]
         results = await asyncio.gather(*tasks)
-        
+
         return sum(results)
 
     async def get_stats(self) -> Dict[str, Any]:

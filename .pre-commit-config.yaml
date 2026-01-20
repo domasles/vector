@@ -1,0 +1,10 @@
+# Pre-commit hooks for Vector Database
+# Run manually: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/psf/black
+    rev: 25.12.0
+    hooks:
+      - id: black
+        args: ['--line-length=120']
+        exclude: '^(__pycache__/|.*\.pyc$|build/|dist/)'

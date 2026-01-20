@@ -11,6 +11,7 @@ from .vector_point import VectorPoint
 
 logger = logging.getLogger(__name__)
 
+
 class CentralAxis:
     """
     Central coordinate axis representing the primary objects (X-axis).
@@ -78,24 +79,24 @@ class CentralAxis:
         """
         Remove a vector point using tombstoning (mark as None).
         No coordinate shifting - O(1) operation.
-        
+
         Args:
             value: The vector point value to remove
-            
+
         Returns:
             bool: True if removed, False if not found
         """
         if value not in self.coordinate_map:
             return False
-        
+
         coordinate = self.coordinate_map[value]
-        
+
         # Tombstone: mark as None (don't shift)
         self.vector_points[coordinate] = None
-        
+
         # Remove from lookup map
         del self.coordinate_map[value]
-        
+
         logger.debug(f"Tombstoned vector point '{value}' at coordinate {coordinate}")
         return True
 
@@ -115,15 +116,18 @@ class CentralAxis:
         """
 
         coordinate = self.get_coordinate(value)
-        if coordinate is None: return None
+        if coordinate is None:
+            return None
 
         attributes = {}
 
         for dimension_name in dimensional_spaces:
-            if dimension_name not in coordinate_mappings: continue
+            if dimension_name not in coordinate_mappings:
+                continue
 
             value_id = coordinate_mappings[dimension_name].get_mapping(coordinate)
-            if value_id is None: continue
+            if value_id is None:
+                continue
 
             result = dimensional_spaces[dimension_name].get_value(value_id)
 

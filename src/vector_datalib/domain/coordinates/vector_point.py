@@ -6,6 +6,7 @@ Represents individual objects/entities in the vector database.
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 
+
 @dataclass
 class VectorPoint:
     """
@@ -14,7 +15,7 @@ class VectorPoint:
     """
 
     coordinate: int
-    value: Any  # The actual value/identifier 
+    value: Any  # The actual value/identifier
     attributes: Dict[str, Any]
 
     def __post_init__(self):

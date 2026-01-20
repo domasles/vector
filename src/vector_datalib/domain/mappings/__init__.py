@@ -2,4 +2,4 @@
 
 from .coordinate_mapping import CoordinateMapping
 
-__all__ = ['CoordinateMapping']
+__all__ = ["CoordinateMapping"]
