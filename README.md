@@ -54,37 +54,39 @@ from vector_datalib import VectorDB
 async def main():
     # Create database with async context manager
     async with VectorDB("my_data.db") as db:
-        # Insert data (sync - pure domain logic, no I/O)
-        db.insert(101, {"age": 25, "name": "Alice"})
-        db.insert(102, {"age": 30, "name": "Bob"})
-        db.insert(103, {"age": 25, "name": "Charlie"})  # age=25 deduplicated automatically
+        # 1. UPSERT: Insert or update (one method for both!)
+        await db.upsert(101, {"age": 25, "name": "Alice"})
+        await db.upsert(102, {"age": 30, "name": "Bob"})
+        await db.upsert(101, {"age": 26, "name": "Alice"})  # Updates Alice
 
-        # O(1) coordinate-based lookup (async - cache + I/O operations)
+        # 2. LOOKUP: O(1) coordinate-based retrieval
         name = await db.lookup(101, "name")
         print(f"Employee 101: {name}")  # Employee 101: Alice
 
-        # Batch operations (sync insert, returns coordinates immediately)
-        db.batch_insert([
+        # 3. DELETE: Remove records with automatic cleanup
+        await db.delete(102)  # Bob is gone, values cleaned up
+
+        # Batch operations for concurrency
+        await db.batch_upsert([
             (104, {"name": "Diana", "age": 28}),
             (105, {"name": "Eve", "age": 32}),
             (106, {"name": "Frank", "age": 27})
         ])
-
-        # Update operations (async - cache invalidation)
-        await db.update(101, "age", 26)  # Alice's age updated
-
-        # Upsert: insert or update if exists (async)
-        await db.upsert(107, {"name": "Grace", "age": 29})
 
         # Database automatically saved on exit
 
 asyncio.run(main())
 ```
 
-**Key Async/Sync Methods:**
-- **Sync**: `insert()`, `batch_insert()` - Pure domain logic, no I/O
-- **Async**: `lookup()`, `update()`, `upsert()`, `save()`, `load()` - I/O operations
-- **Async**: `batch_lookup()`, `batch_update()` - Concurrent operations with `asyncio.gather()`
+**The Entire API:**
+- `await upsert(key, attributes)` - Insert or update
+- `await lookup(key, dimension)` - Read data (O(1))
+- `await delete(key)` - Remove with cleanup
+- `await batch_upsert(records)` - Concurrent insert/update
+- `await batch_lookup(queries)` - Concurrent reads
+- `await batch_delete(keys)` - Concurrent deletes
+- `await save()` - Manual save (auto-saves on exit)
+- `await get_stats()` - Database statistics
 
 ### Advanced Patterns
 
@@ -94,33 +96,38 @@ from vector_datalib import VectorDB
 
 async def main():
     async with VectorDB("analytics.db") as db:
-        # Batch lookups (concurrent with asyncio.gather)
+        # Concurrent batch upserts
+        records = [(i, {"value": i, "squared": i**2}) for i in range(1000)]
+        coordinates = await db.batch_upsert(records)
+        print(f"Inserted {len(coordinates)} records concurrently")
+
+        # Batch lookups (all concurrent)
         user_queries = [(101, "name"), (102, "age"), (103, "department")]
         results = await db.batch_lookup(user_queries)
 
         # LRU caching automatically optimizes repeated lookups
-        name1 = await db.lookup(101, "name")  # Database hit
-        name2 = await db.lookup(101, "name")  # Cache hit (faster)
+        name1 = await db.lookup(101, "name")  # Database + cache
+        name2 = await db.lookup(101, "name")  # Cache hit (instant)
 
-        # Batch updates (concurrent operations)
-        updates = [
-            (101, "status", "active"),
-            (102, "status", "inactive"), 
-            (103, "role", "manager")
-        ]
-
-        successful = await db.batch_update(updates)
-        print(f"Updated {successful} records concurrently")
+        # Batch deletes with cleanup
+        to_delete = [i for i in range(0, 1000, 2)]  # Delete evens
+        deleted_count = await db.batch_delete(to_delete)
+        print(f"Deleted {deleted_count} records")
 
         # Manual save (optional - auto-saves on context exit)
         await db.save()
+
+        # Database statistics
+        stats = await db.get_stats()
+        print(f"Database: {stats['vector_points']} points, {stats['dimensions']} dimensions")
 
 asyncio.run(main())
 ```
 
 **Concurrency Benefits:**
-- `batch_lookup()`: All lookups execute concurrently using `asyncio.gather()`
-- `batch_update()`: All updates execute concurrently
+- `batch_upsert()`: All upserts execute concurrently using `asyncio.gather()`
+- `batch_lookup()`: All lookups execute concurrently
+- `batch_delete()`: All deletes execute concurrently with automatic value cleanup
 - Cache-safe: `asyncio.Lock` prevents race conditions
 - Non-blocking I/O: Uses `aiofiles` for async file operations
 
@@ -183,11 +190,12 @@ from vector_datalib import VectorDB
 
 async def main():
     async with VectorDB("data.db") as db:
-        db.insert(101, {"age": 25, "name": "Alice", "city": "Boston"})
+        await db.upsert(101, age=25, name="Alice", city="Boston")
         # Creates: P(101) = {age: f_age(101)=25, name: f_name(101)="Alice", city: f_city(101)="Boston"}
         
         # Async lookup
-        name = await db.lookup(101, "name")
+        record = await db.lookup(101)
+        print(record)  # {"age": 25, "name": "Alice", "city": "Boston"}
 
 asyncio.run(main())
 ```
@@ -202,19 +210,15 @@ from vector_datalib import VectorDB
 
 async def main():
     async with VectorDB("data.db") as db:
-        db.insert(101, {"age": 25, "name": "Alice"})
-        db.insert(102, {"age": 25, "name": "Bob"})     # age=25 stored once
-        db.insert(103, {"age": 25, "name": "Charlie"}) # age=25 referenced
+        await db.upsert(101, age=25, name="Alice")
+        await db.upsert(102, age=25, name="Bob")     # age=25 stored once
+        await db.upsert(103, age=25, name="Charlie") # age=25 referenced
 
         # Storage optimization: age=25 stored once, referenced by multiple coordinates
         
-        # Verify deduplication
-        ages = await db.batch_lookup([
-            (101, "age"),
-            (102, "age"),
-            (103, "age")
-        ])
-        print(f"Ages: {ages}")  # [25, 25, 25] - but stored once internally
+        # All lookups return the correct values
+        records = await db.batch_lookup([101, 102, 103])
+        print(f"Records: {records}")  # All have age=25, but stored once internally
 
 asyncio.run(main())
 ```
@@ -230,17 +234,17 @@ from vector_datalib import VectorDB
 async def main():
     async with VectorDB("data.db") as db:
         # Start with 2 dimensions
-        db.insert(101, {"age": 25, "name": "Alice"})
+        await db.upsert(101, age=25, name="Alice")
 
-        # Expand to 3 dimensions
-        db.insert(102, {"age": 30, "name": "Bob", "city": "Boston"})
+        # Expand to 3 dimensions (just upsert with new fields)
+        await db.upsert(102, age=30, name="Bob", city="Boston")
 
         # Expand to N dimensions dynamically
-        db.insert(103, {"age": 25, "name": "Charlie", "city": "Boston", "department": "Engineering"})
+        await db.upsert(103, age=25, name="Charlie", city="Boston", department="Engineering")
         
         # Query across dimensions
-        charlie_dept = await db.lookup(103, "department")
-        print(f"Charlie's department: {charlie_dept}")
+        charlie = await db.lookup(103)
+        print(f"Charlie: {charlie}")
 
 asyncio.run(main())
 ```
@@ -248,9 +252,9 @@ asyncio.run(main())
 ## Performance Characteristics
 
 ### Time Complexity
-- **Insert**: O(1) average case with hash-based coordinate indexing (sync)
+- **Upsert**: O(1) average case with hash-based coordinate indexing (async)
 - **Lookup**: O(1) direct coordinate access + cache check (async)
-- **Update**: O(1) coordinate-based modification + cache invalidation (async)
+- **Delete**: O(1) tombstoning with no coordinate shifting (async)
 - **Dimensional Expansion**: O(1) addition of new coordinate relationships
 - **Batch Operations**: O(n) with concurrent execution via `asyncio.gather()`
 
@@ -260,29 +264,33 @@ asyncio.run(main())
 - **Async I/O**: Non-blocking file operations with `aiofiles`
 - **LRU Caching**: In-memory caching for frequently accessed data with `asyncio.Lock`
 - **Concurrent Safety**: `asyncio.Lock` prevents race conditions in cache and storage
+- **Tombstoning**: O(1) deletion without coordinate shifting overhead
+- **Reference Counting**: Automatic cleanup of unreferenced values
 - **Context Managers**: Automatic resource management and cleanup (async with `__aenter__`/`__aexit__`)
 
 ### Space Complexity
 - **Value Deduplication**: Automatic optimization reduces memory usage
 - **Coordinate Indexing**: Hash-based storage for constant-time access
 - **Compression**: Gzip compression for persistent storage efficiency
+- **Sparse Storage**: Tombstones minimize wasted space
 
 ## Async-First Architecture
 
 ### Design Philosophy
 
-Vector uses an **async-first** API design where:
+Vector uses a **simplified async-first** API design:
 
-- **Sync methods** for pure domain logic (no I/O):
-  - `insert()` - Adds coordinates to domain model
-  - `batch_insert()` - Bulk coordinate creation
-  
-- **Async methods** for I/O operations:
+- **All I/O operations are async**:
+  - `upsert()` - Insert or update (single method for both)
   - `lookup()` - Cache + coordinate retrieval
-  - `update()` - Cache invalidation + updates
-  - `upsert()` - Insert-or-update with cache handling
+  - `delete()` - Tombstoning with automatic cleanup
   - `save()` / `load()` - File persistence
-  - `batch_lookup()` / `batch_update()` - Concurrent operations
+  - `batch_upsert()` / `batch_lookup()` / `batch_delete()` - Concurrent operations
+  - `get_stats()` - Database statistics
+
+- **No insert() vs update() confusion**: Only `upsert()` for writes
+- **No verification needed**: Internal consistency maintained automatically
+- **Batching in facade**: Concurrent operations handled by main API
 
 ### Concurrency Features
 
@@ -290,21 +298,24 @@ Vector uses an **async-first** API design where:
 - **Concurrent batching**: `asyncio.gather()` for parallel operations
 - **Cache safety**: `asyncio.Lock` prevents race conditions
 - **No blocking locks**: Removed `threading.RLock` and `filelock`
+- **Tombstoning**: O(1) deletion without coordinate shifting
 
-### Migration from Sync API
+### Migration from Older API
 
-If migrating from older sync API:
+If migrating from older mixed sync/async API:
 
 ```python
-# Old (sync):
+# Old (mixed sync/async):
 with VectorDB("data.db") as db:
-    name = db.lookup(101, "name")
-    db.update(101, "age", 26)
+    db.insert(101, {"name": "Alice", "age": 25})  # Sync
+    name = await db.lookup(101)  # Async
+    await db.update(101, age=26)  # Async
 
-# New (async-first):
+# New (async-first with upsert):
 async with VectorDB("data.db") as db:
-    name = await db.lookup(101, "name")
-    await db.update(101, "age", 26)
+    await db.upsert(101, name="Alice", age=25)  # Async upsert
+    name = await db.lookup(101)  # Async lookup
+    await db.upsert(101, name="Alice", age=26)  # Async upsert (update)
 ```
 
 ## File Format
@@ -351,19 +362,17 @@ from vector_datalib import VectorDB
 async def main():
     async with VectorDB("users.db") as db:
         # X-coordinate: User ID, Y-dimension: Profile data
-        db.insert(1001, {"name": "Alice Johnson", "age": 28, "department": "Engineering"})
-        db.insert(1002, {"name": "Bob Smith", "age": 32, "department": "Sales"})  
-        db.insert(1003, {"name": "Charlie Brown", "age": 28, "department": "Engineering"})
+        await db.upsert(1001, name="Alice Johnson", age=28, department="Engineering")
+        await db.upsert(1002, name="Bob Smith", age=32, department="Sales")  
+        await db.upsert(1003, name="Charlie Brown", age=28, department="Engineering")
 
         # O(1) user lookup (async)
-        name = await db.lookup(1001, "name")
-        age = await db.lookup(1001, "age") 
+        user = await db.lookup(1001)
+        print(f"User: {user}")
 
-        print(f"User: {name}, Age: {age}")
-
-        # Dynamic expansion - add new dimensional relationships
-        await db.update(1001, "salary", 75000)
-        await db.update(1001, "location", "Boston")
+        # Update using upsert - add new dimensional relationships
+        await db.upsert(1001, name="Alice Johnson", age=28, department="Engineering",
+                       salary=75000, location="Boston")
 
 asyncio.run(main())
 ```
@@ -377,31 +386,29 @@ from vector_datalib import VectorDB
 async def main():
     async with VectorDB("products.db") as db:
         # X-coordinate: Product ID, Y/Z dimensions: Product attributes
-        db.insert(2001, {"name": "Laptop", "price": 999.99, "category": "Electronics"})
-        db.insert(2002, {"name": "Mouse", "price": 29.99, "category": "Electronics"})
-        db.insert(2003, {"name": "Desk", "price": 299.99, "category": "Furniture"})
+        await db.upsert(2001, name="Laptop", price=999.99, category="Electronics")
+        await db.upsert(2002, name="Mouse", price=29.99, category="Electronics")
+        await db.upsert(2003, name="Desk", price=299.99, category="Furniture")
 
         # Value deduplication automatically optimizes "Electronics" category storage
 
         # Concurrent batch lookup
-        prices = await db.batch_lookup([
-            (2001, "price"),
-            (2002, "price"),
-            (2003, "price")
-        ])
-        print(f"Prices: {prices}")
+        products = await db.batch_lookup([2001, 2002, 2003])
+        print(f"Products: {products}")
 
 asyncio.run(main())
 ```
 
 ## Best Practices
 
-### Async Usage
+### Simplified API Usage
+- **One write method**: `await db.upsert()` handles both insert and update
+- **No insert() vs update() confusion**: upsert does it all
+- **Automatic cleanup**: delete() removes unused values automatically
+- **Tombstoning**: O(1) deletion with no coordinate shifting
 - **Always use async context managers**: `async with VectorDB() as db:`
-- **Await I/O operations**: `await db.lookup()`, `await db.update()`, `await db.save()`
-- **Sync for domain logic**: `db.insert()` returns immediately (no I/O)
-- **Batch for concurrency**: Use `batch_lookup()` / `batch_update()` for concurrent operations
-- **Use upsert for updates**: `await db.upsert()` for insert-or-update behavior
+- **Batch for concurrency**: Use batch_* methods for multiple operations
+- **Async everywhere**: All I/O operations are async for consistency
 
 ### Coordinate System Design
 - **Always use X-axis as primary key**: This maintains the mathematical foundation

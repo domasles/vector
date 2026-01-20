@@ -34,46 +34,20 @@ class CoordinateService:
         self.storage = storage
         self.cache_service = cache_service
 
-    def insert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
-        """
-        Smart insert (for new entries only).
-
-        If vector_value exists: Returns existing coordinate (caller should use update)
-        If vector_value is new: Inserts as new vector point
-        """
-
-        existing_coordinate = self.central_axis.get_coordinate(vector_value)
-
-        if existing_coordinate is not None:
-            logger.debug(f"Vector point '{vector_value}' already exists at coordinate {existing_coordinate}")
-            return existing_coordinate
-
-        logger.debug(f"Inserting new vector point '{vector_value}'")
-
-        # Add to central axis first
-        coordinate = self.central_axis.add_vector_point(vector_value, position)
-
-        # Process each dimensional attribute
-        for dimension_name, value in attributes.items():
-            if dimension_name not in self.dimensional_spaces:
-                self._add_dimension(dimension_name)
-
-            # Add value to dimensional space (with deduplication)
-            value_id = self.dimensional_spaces[dimension_name].add_value(value)
-            self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
-
-        # Handle coordinate shifting if inserted at specific position
-        if position is not None and position < coordinate:
-            self.central_axis.shift_coordinates_after_insertion(self.coordinate_mappings, position, 1)
-
-        return coordinate
-
     async def upsert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """
-        Smart upsert with collision detection (insert or update if exists).
+        Upsert (insert or update) with attributes.
 
         If vector_value exists: Updates all provided attributes
         If vector_value is new: Inserts as new vector point
+        
+        Args:
+            vector_value: The vector point value
+            attributes: Dict of dimension -> value mappings
+            position: Optional insertion position (only used for new inserts)
+            
+        Returns:
+            int: The coordinate of the vector point
         """
 
         existing_coordinate = self.central_axis.get_coordinate(vector_value)
@@ -81,13 +55,55 @@ class CoordinateService:
         if existing_coordinate is not None:
             logger.debug(f"Updating existing vector point '{vector_value}' at coordinate {existing_coordinate}")
 
+            # Update all provided attributes
             for dimension_name, value in attributes.items():
-                await self.update_coordinate_attribute(vector_value, dimension_name, value)
+                # Ensure dimension exists
+                if dimension_name not in self.dimensional_spaces:
+                    self._add_dimension(dimension_name)
+
+                # Get old value_id for this coordinate
+                old_value_id = self.coordinate_mappings[dimension_name].get_mapping(existing_coordinate)
+
+                # Get or add new value
+                new_value_id = self.dimensional_spaces[dimension_name].get_value_id(value)
+                if new_value_id is None:
+                    new_value_id = self.dimensional_spaces[dimension_name].add_value(value)
+
+                # Update mapping
+                self.coordinate_mappings[dimension_name].set_mapping(existing_coordinate, new_value_id)
+
+                # Clean up old value if unreferenced
+                if old_value_id is not None and old_value_id != new_value_id:
+                    ref_count = self.coordinate_mappings[dimension_name].count_references_to_value(old_value_id)
+                    if ref_count == 0:
+                        self.dimensional_spaces[dimension_name].remove_value_if_unused(old_value_id)
+
+                # Invalidate cache
+                cache_key = f"{vector_value}:{dimension_name}"
+                await self.cache_service.invalidate(cache_key)
 
             return existing_coordinate
 
         else:
-            return self.insert_with_attributes(vector_value, attributes, position)
+            # New insert
+            logger.debug(f"Inserting new vector point '{vector_value}'")
+
+            # Add to central axis
+            coordinate = self.central_axis.add_vector_point(vector_value, position)
+
+            # Add dimensional attributes
+            for dimension_name, value in attributes.items():
+                if dimension_name not in self.dimensional_spaces:
+                    self._add_dimension(dimension_name)
+
+                value_id = self.dimensional_spaces[dimension_name].add_value(value)
+                self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
+
+            # Handle position-based shifting
+            if position is not None and position < coordinate:
+                self.central_axis.shift_coordinates_after_insertion(self.coordinate_mappings, position, 1)
+
+            return coordinate
 
     async def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """
@@ -120,108 +136,51 @@ class CoordinateService:
 
         return result
 
-    async def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
+    async def delete_coordinate(self, vector_value: Any) -> bool:
         """
-        Update a specific value for a vector point in a dimension.
-        Uses reference counting to safely manage dimensional values and async cache invalidation.
-        """
-
-        cache_key = f"{vector_value}:{dimension_name}"
-
-        # Properly invalidate cache using async method
-        await self.cache_service.invalidate(cache_key)
+        Delete a vector point and clean up all dimensional mappings.
+        Uses reference counting to safely remove unused values.
+        Uses tombstoning (O(1)) - no coordinate shifting needed.
         
+        Args:
+            vector_value: The vector point to delete
+            
+        Returns:
+            bool: True if deleted, False if not found
+        """
         # Get coordinate
         coordinate = self.central_axis.get_coordinate(vector_value)
-
         if coordinate is None:
-            logger.warning(f"Vector point {vector_value} not found")
+            logger.warning(f"Vector point {vector_value} not found for deletion")
             return False
-
-        # Ensure dimension exists
-        if dimension_name not in self.dimensional_spaces:
-            self._add_dimension(dimension_name)
-
-        # Get current value_id for this coordinate (if any)
-        old_value_id = self.coordinate_mappings[dimension_name].get_mapping(coordinate)
-        new_value_id = self.dimensional_spaces[dimension_name].get_value_id(new_value)
-
-        if new_value_id is not None:
-            self.coordinate_mappings[dimension_name].set_mapping(coordinate, new_value_id)
-
-        else:
-            new_value_id = self.dimensional_spaces[dimension_name].add_value(new_value)
-            self.coordinate_mappings[dimension_name].set_mapping(coordinate, new_value_id)
-
-        # Clean up old value if no other coordinates reference it
-        if old_value_id is not None and old_value_id != new_value_id:
-            ref_count = self.coordinate_mappings[dimension_name].count_references_to_value(old_value_id)
-
-            if ref_count == 0:
-                self.dimensional_spaces[dimension_name].remove_value_if_unused(old_value_id)
-                logger.debug(f"Cleaned up unused value (ID {old_value_id}) from dimension '{dimension_name}'")
-
-        logger.debug(f"Updated {vector_value}:{dimension_name} = {new_value}")
-        return True
-
-    def batch_insert_with_attributes(self, records: List[tuple]) -> List[int]:
-        """
-        Insert multiple records efficiently.
-        Orchestrates batch operations with proper cache management.
-        """
-
-        coordinates = []
-
-        for record in records:
-            if len(record) == 2:
-                vector_value, attributes = record
-                position = None
-
-            elif len(record) == 3:
-                vector_value, attributes, position = record
-
-            else:
-                raise ValueError("Each record must be (vector_value, attributes) or (vector_value, attributes, position)")
-
-            coord = self.insert_with_attributes(vector_value, attributes, position)
-            coordinates.append(coord)
-
-        logger.info(f"Batch inserted {len(records)} records")
-
-        return coordinates
-
-    async def batch_lookup_coordinates(self, queries: List[tuple]) -> List[Optional[Any]]:
-        """
-        Perform multiple lookups concurrently.
-        Orchestrates batch cache and domain lookups with true concurrency.
-        """
-
-        tasks = [
-            self.lookup_by_coordinate(vector_value, dimension_name)
-            for vector_value, dimension_name in queries
-        ]
-
-        return await asyncio.gather(*tasks)
-
-    async def batch_update_coordinates(self, updates: List[tuple]) -> int:
-        """
-        Perform multiple updates concurrently.
-        Coordinates batch updates with proper error handling.
-        """
-
-        async def _update_single(vector_value, dimension_name, new_value):
-            try:
-                return await self.update_coordinate_attribute(vector_value, dimension_name, new_value)
-            except Exception as e:
-                logger.warning(f"Failed to update {vector_value}:{dimension_name} - {e}")
-                return False
-
-        tasks = [_update_single(*update) for update in updates]
-        results = await asyncio.gather(*tasks)
         
-        successful_updates = sum(results)
-        logger.info(f"Batch updated {successful_updates}/{len(updates)} records")
-        return successful_updates
+        # Invalidate all cache entries for this vector point
+        for dimension_name in self.dimensional_spaces.keys():
+            cache_key = f"{vector_value}:{dimension_name}"
+            await self.cache_service.invalidate(cache_key)
+        
+        # Clean up dimensional mappings and values
+        for dimension_name, mapping in self.coordinate_mappings.items():
+            # Get the value_id that this coordinate references
+            value_id = mapping.get_mapping(coordinate)
+            
+            if value_id is not None:
+                # Remove the mapping
+                mapping.remove_mapping(coordinate)
+                
+                # Check if any other coordinates reference this value
+                ref_count = mapping.count_references_to_value(value_id)
+                
+                # If no more references, remove the value from dimensional space
+                if ref_count == 0:
+                    self.dimensional_spaces[dimension_name].remove_value_if_unused(value_id)
+                    logger.debug(f"Cleaned up unused value (ID {value_id}) from dimension '{dimension_name}'")
+        
+        # Tombstone in central axis (O(1) - no shifting)
+        self.central_axis.remove_vector_point(vector_value)
+        
+        logger.info(f"Deleted vector point '{vector_value}' at coordinate {coordinate}")
+        return True
 
     async def save_database(self) -> bool:
         """
@@ -315,52 +274,6 @@ class CoordinateService:
     def get_dimensions_list(self) -> List[str]:
         """Get all dimensional space names."""
         return list(self.dimensional_spaces.keys())
-
-    def verify_integrity(self) -> Dict[str, Any]:
-        """
-        Verify data integrity and return statistics.
-
-        Returns:
-            Dictionary with integrity check results:
-            - total_coordinates: Number of vector points
-            - dimensions: Number of dimensions
-            - total_values: Sum of unique values across dimensions
-            - cache_size: Current cache size
-            - corrupted: True if any integrity issues found
-            - issues: List of detected problems (if any)
-        """
-
-        stats = {
-            "total_coordinates": len(self.central_axis.vector_points),
-            "dimensions": len(self.dimensional_spaces),
-            "total_values": sum(
-                len(space.value_domain) 
-                for space in self.dimensional_spaces.values()
-            ),
-            "cache_size": self.cache_service.size(),
-            "corrupted": False,
-            "issues": []
-        }
-
-        # Check for orphaned mappings
-        for vector_value in self.central_axis.vector_points:
-            coord = self.central_axis.get_coordinate(vector_value)
-
-            for dim_name, space in self.dimensional_spaces.items():
-                if coord not in self.coordinate_mappings[dim_name].coordinate_to_value_id:
-                    stats["corrupted"] = True
-                    stats["issues"].append(f"Coordinate {coord} missing mapping in dimension '{dim_name}'")
-
-        # Check for invalid value references
-        for dim_name, mapping in self.coordinate_mappings.items():
-            space = self.dimensional_spaces[dim_name]
-
-            for coord, value_id in mapping.coordinate_to_value_id.items():
-                if value_id not in space.value_domain:
-                    stats["corrupted"] = True
-                    stats["issues"].append(f"Invalid value_id {value_id} in dimension '{dim_name}'")
-
-        return stats
 
     def _add_dimension(self, dimension_name: str):
         """

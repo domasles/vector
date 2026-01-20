@@ -67,12 +67,37 @@ class CentralAxis:
         return None
 
     def get_all_points(self) -> List[Any]:
-        """Get all vector points in coordinate order."""
-        return self.vector_points.copy()
+        """Get all vector points in coordinate order (excluding deleted/None)."""
+        return [vp for vp in self.vector_points if vp is not None]
 
     def size(self) -> int:
-        """Get the number of vector points in the central axis."""
-        return len(self.vector_points)
+        """Get the number of vector points in the central axis (excluding deleted/None)."""
+        return sum(1 for vp in self.vector_points if vp is not None)
+
+    def remove_vector_point(self, value: Any) -> bool:
+        """
+        Remove a vector point using tombstoning (mark as None).
+        No coordinate shifting - O(1) operation.
+        
+        Args:
+            value: The vector point value to remove
+            
+        Returns:
+            bool: True if removed, False if not found
+        """
+        if value not in self.coordinate_map:
+            return False
+        
+        coordinate = self.coordinate_map[value]
+        
+        # Tombstone: mark as None (don't shift)
+        self.vector_points[coordinate] = None
+        
+        # Remove from lookup map
+        del self.coordinate_map[value]
+        
+        logger.debug(f"Tombstoned vector point '{value}' at coordinate {coordinate}")
+        return True
 
     def shift_coordinates_after_insertion(self, coordinate_mappings, from_position: int, shift_amount: int):
         """

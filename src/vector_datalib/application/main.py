@@ -95,21 +95,6 @@ class VectorDB:
         if self.__closed:
             raise RuntimeError("Cannot operate on closed database. Use 'async with VectorDB()' context manager.")
 
-    def insert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
-        """Insert new vector point. If exists, returns existing coordinate without updating."""
-
-        if not isinstance(attributes, dict):
-            raise TypeError(f"Attributes must be dict, got {type(attributes).__name__}")
-
-        if not attributes:
-            raise ValueError("Attributes dictionary cannot be empty")
-
-        if position is not None and not isinstance(position, int):
-            raise TypeError(f"Position must be int or None, got {type(position).__name__}")
-
-        self._check_closed()
-        return self.__coordinate_service.insert_with_attributes(vector_value, attributes, position)
-
     async def upsert(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """Smart upsert: inserts if new, updates all attributes if exists."""
 
@@ -134,15 +119,6 @@ class VectorDB:
         self._check_closed()
         return await self.__coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
 
-    async def update(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
-        """Update a specific value for a vector point in a dimension."""
-
-        if not isinstance(dimension_name, str):
-            raise TypeError(f"Dimension name must be str, got {type(dimension_name).__name__}")
-
-        self._check_closed()
-        return await self.__coordinate_service.update_coordinate_attribute(vector_value, dimension_name, new_value)
-
     async def save(self) -> bool:
         """Save the database to file."""
 
@@ -153,27 +129,75 @@ class VectorDB:
             self._check_closed()
             return await self.__coordinate_service.save_database()
 
-    def batch_insert(self, records: List[tuple]) -> List[int]:
-        """Batch insert new vector points (no updates on existing)."""
-
+    async def batch_upsert(self, records: List[tuple]) -> List[int]:
+        """Batch upsert vector points concurrently (insert or update)."""
         self._check_closed()
-        return self.__coordinate_service.batch_insert_with_attributes(records)
+        
+        async def _upsert_single(record):
+            if len(record) == 2:
+                vector_value, attributes = record
+                position = None
+            elif len(record) == 3:
+                vector_value, attributes, position = record
+            else:
+                raise ValueError("Each record must be (vector_value, attributes) or (vector_value, attributes, position)")
+            
+            return await self.__coordinate_service.upsert_with_attributes(vector_value, attributes, position)
+        
+        tasks = [_upsert_single(record) for record in records]
+        coordinates = await asyncio.gather(*tasks)
+        return list(coordinates)
 
     async def batch_lookup(self, queries: List[tuple]) -> List[Optional[Any]]:
         """Perform multiple lookups concurrently."""
-
         self._check_closed()
-        return await self.__coordinate_service.batch_lookup_coordinates(queries)
+        
+        tasks = [
+            self.__coordinate_service.lookup_by_coordinate(vector_value, dimension_name)
+            for vector_value, dimension_name in queries
+        ]
+        return await asyncio.gather(*tasks)
 
-    async def batch_update(self, updates: List[tuple]) -> int:
-        """Perform multiple updates concurrently."""
-
+    async def delete(self, vector_value: Any) -> bool:
+        """
+        Delete a vector point and all its dimensional mappings.
+        
+        Args:
+            vector_value: The vector point to delete
+            
+        Returns:
+            bool: True if deleted, False if not found
+        """
         self._check_closed()
-        return await self.__coordinate_service.batch_update_coordinates(updates)
+        return await self.__coordinate_service.delete_coordinate(vector_value)
 
-    def get_stats(self) -> Dict[str, Any]:
+    async def batch_delete(self, vector_values: List[Any]) -> int:
+        """
+        Delete multiple vector points concurrently.
+        
+        Args:
+            vector_values: List of vector point values to delete
+            
+        Returns:
+            int: Number of successfully deleted vector points
+        """
+        self._check_closed()
+        
+        async def _delete_single(vector_value):
+            try:
+                return await self.__coordinate_service.delete_coordinate(vector_value)
+            except Exception as e:
+                logger.warning(f"Failed to delete {vector_value} - {e}")
+                return False
+        
+        tasks = [_delete_single(vector_value) for vector_value in vector_values]
+        results = await asyncio.gather(*tasks)
+        
+        return sum(results)
+
+    async def get_stats(self) -> Dict[str, Any]:
         """Get database statistics."""
-
+        self._check_closed()
         return self.__coordinate_service.get_database_statistics()
 
     def get_vector_point(self, vector_value: Any):
@@ -190,11 +214,6 @@ class VectorDB:
         """Get all dimensional space names."""
 
         return self.__coordinate_service.get_dimensions_list()
-
-    def verify(self) -> Dict[str, Any]:
-        """Verify data integrity and return statistics."""
-
-        return self.__coordinate_service.verify_integrity()
 
     @property
     def vector_count(self) -> int:

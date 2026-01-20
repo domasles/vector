@@ -74,5 +74,21 @@ class CoordinateMapping:
         """Count how many coordinates reference a specific value ID."""
         return sum(1 for vid in self.coordinate_to_value_id.values() if vid == value_id)
 
+    def remove_mapping(self, x_coordinate: int) -> bool:
+        """
+        Remove the mapping for a coordinate.
+        
+        Args:
+            x_coordinate: The coordinate to remove the mapping for
+            
+        Returns:
+            bool: True if mapping was removed, False if it didn't exist
+        """
+        if x_coordinate in self.coordinate_to_value_id:
+            del self.coordinate_to_value_id[x_coordinate]
+            logger.debug(f"Removed mapping {self.dimension_name}[{x_coordinate}]")
+            return True
+        return False
+
     def __repr__(self) -> str:
         return f"CoordinateMapping(dimension='{self.dimension_name}', mappings={len(self.coordinate_to_value_id)})"
