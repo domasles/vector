@@ -1,5 +1,5 @@
 """
-Cache Service - Handles LRU caching for Vector Database lookups.
+Cache Service - Handles async-safe LRU caching for Vector Database lookups.
 Follows DDD separation of concerns.
 """
 
@@ -7,11 +7,12 @@ from typing import Any, Optional, Dict
 from collections import OrderedDict
 
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 class CacheService:
-    """LRU cache service for database lookups."""
+    """Async-safe LRU cache service for database lookups."""
 
     def __init__(self, max_size: int = 1000):
         """
@@ -23,8 +24,9 @@ class CacheService:
 
         self._cache: OrderedDict[str, Any] = OrderedDict()
         self._max_size = max_size
+        self._lock = asyncio.Lock()
 
-    def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Optional[Any]:
         """
         Get value from cache, moving it to end (most recently used).
 
@@ -35,14 +37,15 @@ class CacheService:
             Cached value or None if not found
         """
 
-        if key in self._cache:
-            # Move to end (most recently used)
-            self._cache.move_to_end(key)
-            return self._cache[key]
+        async with self._lock:
+            if key in self._cache:
+                # Move to end (most recently used)
+                self._cache.move_to_end(key)
+                return self._cache[key]
 
         return None
 
-    def put(self, key: str, value: Any):
+    async def put(self, key: str, value: Any):
         """
         Add item to LRU cache, evicting oldest if at capacity.
 
@@ -51,18 +54,29 @@ class CacheService:
             value: Value to cache
         """
 
-        # If key exists, move to end; otherwise add new
-        if key in self._cache:
-            self._cache.move_to_end(key)
-        
-        self._cache[key] = value
-        
-        # Evict oldest if over capacity
-        if len(self._cache) > self._max_size:
-            self._cache.popitem(last=False)
+        async with self._lock:
+            # If key exists, move to end; otherwise add new
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            
+            self._cache[key] = value
+            
+            # Evict oldest if over capacity
+            if len(self._cache) > self._max_size:
+                self._cache.popitem(last=False)
+
+    async def invalidate(self, key: str):
+        """
+        Remove a specific key from cache.
+
+        Args:
+            key: Cache key to invalidate
+        """
+        async with self._lock:
+            self._cache.pop(key, None)
 
     def clear(self):
-        """Clear all cached items."""
+        """Clear all cached items (sync - used in cleanup)."""
         self._cache.clear()
 
     def size(self) -> int:

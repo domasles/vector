@@ -36,7 +36,41 @@ class CoordinateService:
 
     def insert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
         """
-        Smart insert with collision detection (insert or update if exists).
+        Smart insert (for new entries only).
+
+        If vector_value exists: Returns existing coordinate (caller should use update)
+        If vector_value is new: Inserts as new vector point
+        """
+
+        existing_coordinate = self.central_axis.get_coordinate(vector_value)
+
+        if existing_coordinate is not None:
+            logger.debug(f"Vector point '{vector_value}' already exists at coordinate {existing_coordinate}")
+            return existing_coordinate
+
+        logger.debug(f"Inserting new vector point '{vector_value}'")
+
+        # Add to central axis first
+        coordinate = self.central_axis.add_vector_point(vector_value, position)
+
+        # Process each dimensional attribute
+        for dimension_name, value in attributes.items():
+            if dimension_name not in self.dimensional_spaces:
+                self._add_dimension(dimension_name)
+
+            # Add value to dimensional space (with deduplication)
+            value_id = self.dimensional_spaces[dimension_name].add_value(value)
+            self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
+
+        # Handle coordinate shifting if inserted at specific position
+        if position is not None and position < coordinate:
+            self.central_axis.shift_coordinates_after_insertion(self.coordinate_mappings, position, 1)
+
+        return coordinate
+
+    async def upsert_with_attributes(self, vector_value: Any, attributes: Dict[str, Any], position: Optional[int] = None) -> int:
+        """
+        Smart upsert with collision detection (insert or update if exists).
 
         If vector_value exists: Updates all provided attributes
         If vector_value is new: Inserts as new vector point
@@ -48,39 +82,21 @@ class CoordinateService:
             logger.debug(f"Updating existing vector point '{vector_value}' at coordinate {existing_coordinate}")
 
             for dimension_name, value in attributes.items():
-                self.update_coordinate_attribute(vector_value, dimension_name, value)
+                await self.update_coordinate_attribute(vector_value, dimension_name, value)
 
             return existing_coordinate
 
         else:
-            logger.debug(f"Inserting new vector point '{vector_value}'")
+            return self.insert_with_attributes(vector_value, attributes, position)
 
-            # Add to central axis first
-            coordinate = self.central_axis.add_vector_point(vector_value, position)
-
-            # Process each dimensional attribute
-            for dimension_name, value in attributes.items():
-                if dimension_name not in self.dimensional_spaces:
-                    self._add_dimension(dimension_name)
-
-                # Add value to dimensional space (with deduplication)
-                value_id = self.dimensional_spaces[dimension_name].add_value(value)
-                self.coordinate_mappings[dimension_name].set_mapping(coordinate, value_id)
-
-            # Handle coordinate shifting if inserted at specific position
-            if position is not None and position < coordinate:
-                self.central_axis.shift_coordinates_after_insertion(self.coordinate_mappings, position, 1)
-
-            return coordinate
-
-    def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
+    async def lookup_by_coordinate(self, vector_value: Any, dimension_name: str) -> Optional[Any]:
         """
         Look up a value for a vector point in a specific dimension.
-        O(1) lookup with LRU caching coordination.
+        O(1) lookup with async LRU caching coordination.
         """
 
         cache_key = f"{vector_value}:{dimension_name}"
-        cached_result = self.cache_service.get(cache_key)
+        cached_result = await self.cache_service.get(cache_key)
 
         if cached_result is not None: return cached_result
 
@@ -100,20 +116,20 @@ class CoordinateService:
 
         # Cache the result
         if result is not None:
-            self.cache_service.put(cache_key, result)
+            await self.cache_service.put(cache_key, result)
 
         return result
 
-    def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
+    async def update_coordinate_attribute(self, vector_value: Any, dimension_name: str, new_value: Any) -> bool:
         """
         Update a specific value for a vector point in a dimension.
-        Uses reference counting to safely manage dimensional values.
+        Uses reference counting to safely manage dimensional values and async cache invalidation.
         """
 
         cache_key = f"{vector_value}:{dimension_name}"
 
-        if cache_key in self.cache_service._cache:
-            del self.cache_service._cache[cache_key]
+        # Properly invalidate cache using async method
+        await self.cache_service.invalidate(cache_key)
         
         # Get coordinate
         coordinate = self.central_axis.get_coordinate(vector_value)
@@ -174,41 +190,42 @@ class CoordinateService:
 
         return coordinates
 
-    def batch_lookup_coordinates(self, queries: List[tuple]) -> List[Optional[Any]]:
+    async def batch_lookup_coordinates(self, queries: List[tuple]) -> List[Optional[Any]]:
         """
-        Perform multiple lookups efficiently.
-        Orchestrates batch cache and domain lookups.
+        Perform multiple lookups concurrently.
+        Orchestrates batch cache and domain lookups with true concurrency.
         """
 
-        results = [
+        tasks = [
             self.lookup_by_coordinate(vector_value, dimension_name)
             for vector_value, dimension_name in queries
         ]
 
-        return results
+        return await asyncio.gather(*tasks)
 
-    def batch_update_coordinates(self, updates: List[tuple]) -> int:
+    async def batch_update_coordinates(self, updates: List[tuple]) -> int:
         """
-        Perform multiple updates efficiently.
+        Perform multiple updates concurrently.
         Coordinates batch updates with proper error handling.
         """
 
-        successful_updates = 0
-
-        for vector_value, dimension_name, new_value in updates:
+        async def _update_single(vector_value, dimension_name, new_value):
             try:
-                if self.update_coordinate_attribute(vector_value, dimension_name, new_value):
-                    successful_updates += 1
-
+                return await self.update_coordinate_attribute(vector_value, dimension_name, new_value)
             except Exception as e:
                 logger.warning(f"Failed to update {vector_value}:{dimension_name} - {e}")
+                return False
 
+        tasks = [_update_single(*update) for update in updates]
+        results = await asyncio.gather(*tasks)
+        
+        successful_updates = sum(results)
         logger.info(f"Batch updated {successful_updates}/{len(updates)} records")
         return successful_updates
 
-    def save_database(self) -> bool:
+    async def save_database(self) -> bool:
         """
-        Save database using enhanced storage service.
+        Save database using async storage service.
         Coordinates between domain state and storage infrastructure.
         """
 
@@ -216,17 +233,17 @@ class CoordinateService:
             self.central_axis, self.dimensional_spaces, self.coordinate_mappings
         )
 
-        return self.storage.save_with_auto_metadata(
+        return await self.storage.save_with_auto_metadata(
             database_data, self.central_axis, self.dimensional_spaces
         )
 
-    def load_database_structure(self):
+    async def load_database_structure(self):
         """
-        Load database structure using enhanced storage service.
+        Load database structure using async storage service.
         Coordinates restoration of domain objects from storage.
         """
 
-        database_data = self.storage.load_database_structure()
+        database_data = await self.storage.load_database_structure()
         if database_data is None: return
 
         try:
@@ -356,62 +373,4 @@ class CoordinateService:
             self.coordinate_mappings[dimension_name] = CoordinateMapping(dimension_name)
 
             logger.info(f"Added new dimension: '{dimension_name}'")
-
-    async def save_database_async(self) -> bool:
-        """
-        Save database using async storage service.
-        Coordinates between domain state and storage infrastructure.
-        """
-        database_data = self.storage.serialize_database_structure(
-            self.central_axis, self.dimensional_spaces, self.coordinate_mappings
-        )
-
-        return await self.storage.save_with_auto_metadata_async(
-            database_data, self.central_axis, self.dimensional_spaces
-        )
-
-    async def load_database_structure_async(self):
-        """
-        Load database structure using async storage service.
-        Coordinates restoration of domain objects from storage.
-        """
-        database_data = await self.storage.load_database_structure_async()
-        if database_data is None: return
-
-        try:
-            # Restore central axis
-            axis_data = database_data.get("central_axis", {})
-
-            self.central_axis.vector_points = axis_data.get("vector_points", [])
-            self.central_axis.coordinate_map = axis_data.get("coordinate_map", {})
-
-            # Restore dimensional spaces
-            spaces_data = database_data.get("dimensional_spaces", {})
-            
-            for name, space_data in spaces_data.items():
-                space = DimensionalSpace(name)
-
-                # Convert string keys back to integers for value_domain
-                space.value_domain = {int(k): v for k, v in space_data.get("value_domain", {}).items()}
-
-                # Rebuild value_to_id from value_domain (ensures consistency)
-                space.value_to_id = {v: int(k) for k, v in space_data.get("value_domain", {}).items()}
-
-                space.next_id = space_data.get("next_id", 1)
-                self.dimensional_spaces[name] = space
-
-            # Restore coordinate mappings
-            mappings_data = database_data.get("coordinate_mappings", {})
-
-            for name, mapping_data in mappings_data.items():
-                mapping = CoordinateMapping(name)
-
-                # Convert string keys back to integers (JSON serialization converts int keys to strings)
-                mapping.coordinate_to_value_id = {int(k): v for k, v in mapping_data.items()}
-                self.coordinate_mappings[name] = mapping
-
-            logger.info("Database loaded successfully from file (async)")
-
-        except Exception as e:
-            logger.error(f"Failed to load database (async): {e}")
 
