@@ -6,6 +6,7 @@ Follows DDD principles by coordinating domain logic without containing business 
 from typing import Dict, Any, Optional, List
 
 import logging
+import asyncio
 
 from ...domain.spaces import DimensionalSpace
 from ...domain.mappings import CoordinateMapping
@@ -355,3 +356,62 @@ class CoordinateService:
             self.coordinate_mappings[dimension_name] = CoordinateMapping(dimension_name)
 
             logger.info(f"Added new dimension: '{dimension_name}'")
+
+    async def save_database_async(self) -> bool:
+        """
+        Save database using async storage service.
+        Coordinates between domain state and storage infrastructure.
+        """
+        database_data = self.storage.serialize_database_structure(
+            self.central_axis, self.dimensional_spaces, self.coordinate_mappings
+        )
+
+        return await self.storage.save_with_auto_metadata_async(
+            database_data, self.central_axis, self.dimensional_spaces
+        )
+
+    async def load_database_structure_async(self):
+        """
+        Load database structure using async storage service.
+        Coordinates restoration of domain objects from storage.
+        """
+        database_data = await self.storage.load_database_structure_async()
+        if database_data is None: return
+
+        try:
+            # Restore central axis
+            axis_data = database_data.get("central_axis", {})
+
+            self.central_axis.vector_points = axis_data.get("vector_points", [])
+            self.central_axis.coordinate_map = axis_data.get("coordinate_map", {})
+
+            # Restore dimensional spaces
+            spaces_data = database_data.get("dimensional_spaces", {})
+            
+            for name, space_data in spaces_data.items():
+                space = DimensionalSpace(name)
+
+                # Convert string keys back to integers for value_domain
+                space.value_domain = {int(k): v for k, v in space_data.get("value_domain", {}).items()}
+
+                # Rebuild value_to_id from value_domain (ensures consistency)
+                space.value_to_id = {v: int(k) for k, v in space_data.get("value_domain", {}).items()}
+
+                space.next_id = space_data.get("next_id", 1)
+                self.dimensional_spaces[name] = space
+
+            # Restore coordinate mappings
+            mappings_data = database_data.get("coordinate_mappings", {})
+
+            for name, mapping_data in mappings_data.items():
+                mapping = CoordinateMapping(name)
+
+                # Convert string keys back to integers (JSON serialization converts int keys to strings)
+                mapping.coordinate_to_value_id = {int(k): v for k, v in mapping_data.items()}
+                self.coordinate_mappings[name] = mapping
+
+            logger.info("Database loaded successfully from file (async)")
+
+        except Exception as e:
+            logger.error(f"Failed to load database (async): {e}")
+

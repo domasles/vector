@@ -6,6 +6,7 @@ Delegates all operations to service layer following clean architecture.
 from typing import Dict, Any, Optional, List
 
 import threading
+import asyncio
 import logging
 
 from .services import CoordinateService, CacheService
@@ -215,3 +216,42 @@ class VectorDB:
     def __repr__(self) -> str:
         with self.__lock:
             return f"VectorDB(path='{self.database_path}', points={self.__central_axis.size()}, dimensions={len(self.__dimensional_spaces)})"
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        self.__async_lock = asyncio.Lock()
+        
+        async with self.__async_lock:
+            if not self.__initialized:
+                await self.__coordinate_service.load_database_structure_async()
+                self.__initialized = True
+
+            logger.info(f"VectorDB initialized (async) with {self.__central_axis.size()} vector points")
+            return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - auto-save and cleanup."""
+        async with self.__async_lock:
+            self.__closed = True
+
+            try:
+                await self.__coordinate_service.save_database_async()
+
+            except Exception as e:
+                logger.error(f"Error saving database on exit (async): {e}")
+                raise
+
+            finally:
+                self.__cache_service.clear()
+
+        return False
+
+    async def save_async(self) -> bool:
+        """Save the database to file asynchronously."""
+        if not hasattr(self, '_VectorDB__async_lock'):
+            raise RuntimeError("save_async() requires using 'async with' context manager")
+        
+        async with self.__async_lock:
+            self._check_closed()
+            return await self.__coordinate_service.save_database_async()
+

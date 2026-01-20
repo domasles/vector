@@ -36,7 +36,8 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "msgpack>=1.0.0",
-    "filelock>=3.0.0"
+    "filelock>=3.0.0",
+    "aiofiles>=23.0.0"
 ]
 
 [project.optional-dependencies]
