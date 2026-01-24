@@ -4,6 +4,7 @@ All other dimensional spaces radiate from this central axis like propeller blade
 """
 
 from typing import Dict, Any, Optional, List
+from array import array
 
 import logging
 
@@ -21,7 +22,17 @@ class CentralAxis:
     def __init__(self):
         self.vector_points: List[Any] = []
         self.coordinate_map: Dict[Any, int] = {}  # value -> coordinate lookup
-        self.free_slots: List[int] = []  # Stack of reusable tombstoned coordinates
+        self._free_slots: array = array("q")  # Compact int64 array for memory efficiency
+
+    @property
+    def free_slots(self) -> List[int]:
+        """Get free_slots as list (for serialization compatibility)."""
+        return self._free_slots.tolist()
+
+    @free_slots.setter
+    def free_slots(self, value: List[int]):
+        """Set free_slots from list (for deserialization)."""
+        self._free_slots = array("q", value)
 
     def add_vector_point(self, value: Any, position: Optional[int] = None) -> int:
         """
@@ -41,9 +52,9 @@ class CentralAxis:
 
         if position is None:
             # Check for reusable tombstoned slots first
-            if self.free_slots:
+            if self._free_slots:
                 # Pop the highest free slot (LIFO - more cache friendly)
-                coordinate = self.free_slots.pop()
+                coordinate = self._free_slots.pop()
 
                 self.vector_points[coordinate] = value
                 self.coordinate_map[value] = coordinate
@@ -69,7 +80,7 @@ class CentralAxis:
                     self.coordinate_map[point] = idx
 
             # Shift all free_slots that are >= position
-            self.free_slots = [slot + 1 if slot >= position else slot for slot in self.free_slots]
+            self._free_slots = array("q", [slot + 1 if slot >= position else slot for slot in self._free_slots])
 
             return position
 
@@ -129,31 +140,32 @@ class CentralAxis:
             removed_coord = len(self.vector_points) - 1
             self.vector_points.pop()
 
-            # Remove from free_slots if present
-            if removed_coord in self.free_slots:
-                self.free_slots.remove(removed_coord)
+            try:
+                idx = self._free_slots.index(removed_coord)
+                self._free_slots.pop(idx)
+
+            except ValueError:
+                pass  # Not in array
 
             logger.debug(f"Cleaned up trailing tombstone at coordinate {removed_coord}")
 
     def _add_free_slot(self, coordinate: int):
-        """Add a coordinate to free_slots."""
+        """Add a coordinate to _free_slots in descending order."""
 
-        # Simple insertion - could use bisect for larger lists
-        if not self.free_slots:
-            self.free_slots.append(coordinate)
+        if not self._free_slots:
+            self._free_slots.append(coordinate)
 
         else:
-            # Insert in descending order position
             inserted = False
 
-            for i, slot in enumerate(self.free_slots):
-                if coordinate > slot:
-                    self.free_slots.insert(i, coordinate)
+            for i in range(len(self._free_slots)):
+                if coordinate > self._free_slots[i]:
+                    self._free_slots.insert(i, coordinate)
                     inserted = True
                     break
 
             if not inserted:
-                self.free_slots.append(coordinate)
+                self._free_slots.append(coordinate)
 
     def shift_coordinates_after_insertion(self, coordinate_mappings, from_position: int, shift_amount: int):
         """

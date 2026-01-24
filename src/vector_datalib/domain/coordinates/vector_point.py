@@ -1,26 +1,24 @@
 """
 Vector Point - A point in the central coordinate system.
 Represents individual objects/entities in the vector database.
+Uses __slots__ for memory efficiency.
 """
 
 from typing import Any, Dict, Optional
-from dataclasses import dataclass
 
 
-@dataclass
 class VectorPoint:
     """
     A point in the vector coordinate system.
     Represents an individual entity with its position and attributes.
     """
 
-    coordinate: int
-    value: Any  # The actual value/identifier
-    attributes: Dict[str, Any]
+    __slots__ = ("coordinate", "value", "attributes")
 
-    def __post_init__(self):
-        if self.attributes is None:
-            self.attributes = {}
+    def __init__(self, coordinate: int, value: Any, attributes: Dict[str, Any] = None):
+        self.coordinate = coordinate
+        self.value = value
+        self.attributes = attributes if attributes is not None else {}
 
     def get_attribute(self, dimension_name: str) -> Optional[Any]:
         """Get the value for a specific dimensional attribute."""

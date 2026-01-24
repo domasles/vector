@@ -2,12 +2,14 @@
 Vector Database File Storage - single file storage system.
 Handles persistence of the vector database to a single .db file.
 Uses MessagePack for efficient binary serialization with async I/O.
+Uses LZ4 for blazing fast compression.
 """
 
 import logging
 import msgpack
-import gzip
 import asyncio
+
+import lz4.frame as lz4
 
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -58,6 +60,7 @@ class VectorFileStorage:
         Returns:
             bool: True if save succeeded
         """
+
         if not AIOFILES_AVAILABLE:
             raise ImportError("aiofiles is required for async operations. Install with: pip install aiofiles")
 
@@ -83,7 +86,11 @@ class VectorFileStorage:
                 return msgpack.packb(complete_data, use_bin_type=True)
 
             msgpack_data = await loop.run_in_executor(None, _packb)
-            compressed_data = await loop.run_in_executor(None, gzip.compress, msgpack_data)
+
+            def _compress():
+                return lz4.compress(msgpack_data, compression_level=0)  # 0 = fastest
+
+            compressed_data = await loop.run_in_executor(None, _compress)
 
             # Create parent directory if needed
             await aiofiles.os.makedirs(self.file_path.parent, exist_ok=True)
@@ -108,6 +115,7 @@ class VectorFileStorage:
         Returns:
             Optional[Dict]: Database data if load succeeded, None otherwise
         """
+
         if not AIOFILES_AVAILABLE:
             raise ImportError("aiofiles is required for async operations. Install with: pip install aiofiles")
 
@@ -121,9 +129,8 @@ class VectorFileStorage:
                 async with aiofiles.open(self.file_path, "rb") as f:
                     compressed_data = await f.read()
 
-            # Decompress and deserialize in thread pool
             loop = asyncio.get_event_loop()
-            msgpack_data = await loop.run_in_executor(None, gzip.decompress, compressed_data)
+            msgpack_data = await loop.run_in_executor(None, lz4.decompress, compressed_data)
 
             def _unpackb():
                 return msgpack.unpackb(msgpack_data, raw=False, strict_map_key=False)
@@ -149,18 +156,22 @@ class VectorFileStorage:
 
     async def exists(self) -> bool:
         """Check if database file exists asynchronously."""
+
         if not AIOFILES_AVAILABLE:
             return self.file_path.exists()
+
         return await aiofiles.os.path.exists(self.file_path)
 
     async def delete(self) -> bool:
         """Delete database file asynchronously."""
+
         if not AIOFILES_AVAILABLE:
             try:
                 if self.file_path.exists():
                     self.file_path.unlink()
                     logger.info(f"Deleted database file {self.file_path}")
                 return True
+
             except Exception as e:
                 logger.error(f"Failed to delete database file: {e}")
                 return False
@@ -170,7 +181,9 @@ class VectorFileStorage:
                 await aiofiles.os.remove(self.file_path)
                 logger.info(f"Deleted database file {self.file_path}")
                 return True
+
             return False
+
         except Exception as e:
             logger.error(f"Failed to delete database file: {e}")
             return False
@@ -242,8 +255,8 @@ class VectorFileStorage:
         """
         Save database with automatic metadata updates asynchronously.
         """
-        self.update_metadata({"total_vector_points": central_axis.size(), "total_dimensions": len(dimensional_spaces)})
 
+        self.update_metadata({"total_vector_points": central_axis.size(), "total_dimensions": len(dimensional_spaces)})
         return await self.save_database(database_data)
 
     def __repr__(self) -> str:
