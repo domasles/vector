@@ -3,9 +3,11 @@ Dimensional Space - Represents attribute dimensions (Y, Z, J...) with value doma
 Each space contains unique values with deduplication for memory efficiency.
 """
 
-from typing import Dict, Any, Optional, Set
+from typing import Any, Optional, Dict
 
 import logging
+
+from bidict import bidict
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,18 @@ class DimensionalSpace:
 
     def __init__(self, name: str):
         self.name = name
-        self.value_domain: Dict[int, Any] = {}  # id -> value mapping
-        self.value_to_id: Dict[Any, int] = {}  # value -> id reverse lookup
+        self._values: bidict[int, Any] = bidict()
         self.next_id = 1  # Auto-incrementing ID counter
+
+    @property
+    def value_domain(self) -> Dict[int, Any]:
+        """Forward lookup (id → value). Returns dict for serialization compatibility."""
+        return dict(self._values)
+
+    @value_domain.setter
+    def value_domain(self, data: Dict[int, Any]):
+        """Set values from a dict (used during deserialization)."""
+        self._values = bidict(data)
 
     def add_value(self, value: Any) -> int:
         """
@@ -33,15 +44,13 @@ class DimensionalSpace:
         Returns:
             int: The unique ID for this value in the domain
         """
-
-        if value in self.value_to_id:
-            return self.value_to_id[value]
+        # Check if value already exists (O(1) reverse lookup)
+        if value in self._values.inverse:
+            return self._values.inverse[value]
 
         # Add new value to domain
         value_id = self.next_id
-
-        self.value_domain[value_id] = value
-        self.value_to_id[value] = value_id
+        self._values[value_id] = value
         self.next_id += 1
 
         logger.debug(f"Added value '{value}' to dimension '{self.name}' with ID {value_id}")
@@ -49,40 +58,15 @@ class DimensionalSpace:
 
     def get_value(self, value_id: int) -> Optional[Any]:
         """Get the value for a given ID in the value domain."""
-        return self.value_domain.get(value_id)
+        return self._values.get(value_id)
 
     def get_value_id(self, value: Any) -> Optional[int]:
         """Get the ID for a given value in the value domain."""
-        return self.value_to_id.get(value)
-
-    def update_value(self, old_value: Any, new_value: Any) -> bool:
-        """
-        Update a value in the domain. All references automatically updated.
-
-        Args:
-            old_value: The current value to replace
-            new_value: The new value to set
-
-        Returns:
-            bool: True if update succeeded, False if old_value not found
-        """
-
-        value_id = self.value_to_id.get(old_value)
-        if value_id is None:
-            return False
-
-        # Update both mappings
-        del self.value_to_id[old_value]
-
-        self.value_domain[value_id] = new_value
-        self.value_to_id[new_value] = value_id
-
-        logger.debug(f"Updated value in dimension '{self.name}': '{old_value}' -> '{new_value}'")
-        return True
+        return self._values.inverse.get(value)
 
     def get_value_count(self) -> int:
         """Get the number of unique values in this dimensional space."""
-        return len(self.value_domain)
+        return len(self._values)
 
     def remove_value_if_unused(self, value_id: int) -> bool:
         """
@@ -95,13 +79,9 @@ class DimensionalSpace:
         Returns:
             bool: True if value was removed, False if it didn't exist
         """
-
-        if value_id in self.value_domain:
-            old_value = self.value_domain[value_id]
-            del self.value_domain[value_id]
-
-            if old_value in self.value_to_id:
-                del self.value_to_id[old_value]
+        if value_id in self._values:
+            old_value = self._values[value_id]
+            del self._values[value_id]  # bidict handles both directions
 
             logger.debug(f"Removed unused value '{old_value}' (ID {value_id}) from dimension '{self.name}'")
             return True

@@ -1,6 +1,7 @@
 # Core Dependencies
 msgpack>=1.0.0
 aiofiles>=23.0.0
+bidict>=0.23.1
 
 # Commits, lints and tests
 black==25.12.0

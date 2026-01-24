@@ -218,6 +218,7 @@ class CoordinateService:
 
             self.central_axis.vector_points = axis_data.get("vector_points", [])
             self.central_axis.coordinate_map = axis_data.get("coordinate_map", {})
+            self.central_axis.free_slots = axis_data.get("free_slots", [])
 
             # Restore dimensional spaces
             spaces_data = database_data.get("dimensional_spaces", {})
@@ -228,9 +229,6 @@ class CoordinateService:
                 # Convert string keys back to integers for value_domain
                 space.value_domain = {int(k): v for k, v in space_data.get("value_domain", {}).items()}
 
-                # Rebuild value_to_id from value_domain (ensures consistency)
-                space.value_to_id = {v: int(k) for k, v in space_data.get("value_domain", {}).items()}
-
                 space.next_id = space_data.get("next_id", 1)
                 self.dimensional_spaces[name] = space
 
@@ -240,8 +238,22 @@ class CoordinateService:
             for name, mapping_data in mappings_data.items():
                 mapping = CoordinateMapping(name)
 
-                # Convert string keys back to integers (JSON serialization converts int keys to strings)
-                mapping.coordinate_to_value_id = {int(k): v for k, v in mapping_data.items()}
+                # Handle both old format (direct dict) and new format (nested with ref_counts)
+                if isinstance(mapping_data, dict) and "coordinate_to_value_id" in mapping_data:
+                    # New format with ref_counts
+                    mapping.coordinate_to_value_id = {
+                        int(k): v for k, v in mapping_data["coordinate_to_value_id"].items()
+                    }
+                    mapping.ref_counts = {int(k): v for k, v in mapping_data.get("ref_counts", {}).items()}
+
+                else:
+                    # Old format - rebuild ref_counts from mappings
+                    mapping.coordinate_to_value_id = {int(k): v for k, v in mapping_data.items()}
+
+                    # Rebuild ref_counts
+                    for value_id in mapping.coordinate_to_value_id.values():
+                        mapping.ref_counts[value_id] = mapping.ref_counts.get(value_id, 0) + 1
+
                 self.coordinate_mappings[name] = mapping
 
             logger.info("Database loaded successfully from file")

@@ -203,13 +203,18 @@ class VectorFileStorage:
             "central_axis": {
                 "vector_points": central_axis.vector_points,
                 "coordinate_map": central_axis.coordinate_map,
+                "free_slots": central_axis.free_slots,
             },
             "dimensional_spaces": {
-                name: {"value_domain": space.value_domain, "value_to_id": space.value_to_id, "next_id": space.next_id}
+                name: {"value_domain": space.value_domain, "next_id": space.next_id}
                 for name, space in dimensional_spaces.items()
             },
             "coordinate_mappings": {
-                name: mapping.coordinate_to_value_id for name, mapping in coordinate_mappings.items()
+                name: {
+                    "coordinate_to_value_id": mapping.coordinate_to_value_id,
+                    "ref_counts": mapping.ref_counts,
+                }
+                for name, mapping in coordinate_mappings.items()
             },
         }
 

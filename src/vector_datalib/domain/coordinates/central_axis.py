@@ -21,14 +21,16 @@ class CentralAxis:
     def __init__(self):
         self.vector_points: List[Any] = []
         self.coordinate_map: Dict[Any, int] = {}  # value -> coordinate lookup
+        self.free_slots: List[int] = []  # Stack of reusable tombstoned coordinates
 
     def add_vector_point(self, value: Any, position: Optional[int] = None) -> int:
         """
         Add a new vector point to the central axis.
+        Reuses tombstoned slots when available (LIFO order).
 
         Args:
             value: The vector point value to add
-            position: Optional position to insert at (None = append)
+            position: Optional position to insert at (None = append or reuse tombstone)
 
         Returns:
             int: The coordinate index of the added point
@@ -38,6 +40,18 @@ class CentralAxis:
             return self.coordinate_map[value]
 
         if position is None:
+            # Check for reusable tombstoned slots first
+            if self.free_slots:
+                # Pop the highest free slot (LIFO - more cache friendly)
+                coordinate = self.free_slots.pop()
+
+                self.vector_points[coordinate] = value
+                self.coordinate_map[value] = coordinate
+
+                logger.debug(f"Reused tombstoned slot {coordinate} for '{value}'")
+                return coordinate
+
+            # No free slots - append to end
             coordinate = len(self.vector_points)
 
             self.vector_points.append(value)
@@ -51,21 +65,17 @@ class CentralAxis:
             self.coordinate_map.clear()
 
             for idx, point in enumerate(self.vector_points):
-                self.coordinate_map[point] = idx
+                if point is not None:
+                    self.coordinate_map[point] = idx
+
+            # Shift all free_slots that are >= position
+            self.free_slots = [slot + 1 if slot >= position else slot for slot in self.free_slots]
 
             return position
 
     def get_coordinate(self, value: Any) -> Optional[int]:
         """Get the coordinate index for a given vector point value."""
         return self.coordinate_map.get(value)
-
-    def get_vector_point(self, coordinate: int) -> Optional[Any]:
-        """Get the vector point value at a given coordinate."""
-
-        if 0 <= coordinate < len(self.vector_points):
-            return self.vector_points[coordinate]
-
-        return None
 
     def get_all_points(self) -> List[Any]:
         """Get all vector points in coordinate order (excluding deleted/None)."""
@@ -98,7 +108,52 @@ class CentralAxis:
         del self.coordinate_map[value]
 
         logger.debug(f"Tombstoned vector point '{value}' at coordinate {coordinate}")
+
+        # Clean up trailing tombstones and update free_slots
+        self._cleanup_trailing_tombstones()
+
+        # If coordinate still exists after cleanup (wasn't a trailing tombstone), track it for reuse
+        if coordinate < len(self.vector_points):
+            # Insert into free_slots
+            self._add_free_slot(coordinate)
+
         return True
+
+    def _cleanup_trailing_tombstones(self):
+        """
+        Remove consecutive None values from the end of vector_points.
+        Also removes those coordinates from free_slots since they no longer exist.
+        """
+
+        while self.vector_points and self.vector_points[-1] is None:
+            removed_coord = len(self.vector_points) - 1
+            self.vector_points.pop()
+
+            # Remove from free_slots if present
+            if removed_coord in self.free_slots:
+                self.free_slots.remove(removed_coord)
+
+            logger.debug(f"Cleaned up trailing tombstone at coordinate {removed_coord}")
+
+    def _add_free_slot(self, coordinate: int):
+        """Add a coordinate to free_slots."""
+
+        # Simple insertion - could use bisect for larger lists
+        if not self.free_slots:
+            self.free_slots.append(coordinate)
+
+        else:
+            # Insert in descending order position
+            inserted = False
+
+            for i, slot in enumerate(self.free_slots):
+                if coordinate > slot:
+                    self.free_slots.insert(i, coordinate)
+                    inserted = True
+                    break
+
+            if not inserted:
+                self.free_slots.append(coordinate)
 
     def shift_coordinates_after_insertion(self, coordinate_mappings, from_position: int, shift_amount: int):
         """
