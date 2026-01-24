@@ -351,7 +351,7 @@ Vector uses a binary file format with MessagePack serialization and LZ4 compress
 ## Development
 
 ### Requirements
-- Python 3.9+
+- Python 3.11+
 - Dependencies: msgpack, aiofiles, lz4, bidict
 
 ## Coordinate System Examples
