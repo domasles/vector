@@ -41,7 +41,7 @@ cd vector
 # Install in development mode
 pip install -e .
 
-# Or install from PyPI (when published)
+# Or install from PyPI
 pip install vector-datalib
 ```
 
@@ -262,18 +262,19 @@ asyncio.run(main())
 
 ### Storage Optimizations
 - **MessagePack Serialization**: 2-3x smaller files than JSON
-- **Gzip Compression**: Additional compression for minimal overhead
+- **LZ4 Compression**: Blazing fast compression
 - **Async I/O**: Non-blocking file operations with `aiofiles`
 - **LRU Caching**: In-memory caching for frequently accessed data with `asyncio.Lock`
 - **Concurrent Safety**: `asyncio.Lock` prevents race conditions in cache and storage
 - **Tombstoning**: O(1) deletion without coordinate shifting overhead
+- **Tombstone Slot Reuse**: Deleted coordinate slots are recycled for new inserts
 - **Reference Counting**: Automatic cleanup of unreferenced values
 - **Context Managers**: Automatic resource management and cleanup (async with `__aenter__`/`__aexit__`)
 
 ### Space Complexity
 - **Value Deduplication**: Automatic optimization reduces memory usage
 - **Coordinate Indexing**: Hash-based storage for constant-time access
-- **Compression**: Gzip compression for persistent storage efficiency
+- **LZ4 Compression**: Fast compression for persistent storage efficiency
 - **Sparse Storage**: Tombstones minimize wasted space
 
 ## Async-First Architecture
@@ -324,34 +325,34 @@ async with VectorDB("data.db") as db:
 
 ### .db File Structure
 
-```json
-{
-  "metadata": {
-    "version": "1.3.0-beta",
-    "created_at": "2025-01-XX",
-    "coordinate_count": 1000
-  },
-  "central_axis": {
-    "coordinates": [1, 2, 3, ...]
-  },
-  "dimensional_spaces": {
-    "age": {
-      "values": [25, 30, 35],
-      "coordinate_mappings": {"1": 0, "2": 1, "3": 0}
-    },
-    "name": {
-      "values": ["Alice", "Bob", "Charlie"],
-      "coordinate_mappings": {"1": 0, "2": 1, "3": 2}
-    }
-  }
-}
+Vector uses a binary file format with MessagePack serialization and LZ4 compression for optimal performance:
+
 ```
+┌─────────────────────────────────────┐
+│           LZ4 Compressed            │
+│  ┌───────────────────────────────┐  │
+│  │      MessagePack Binary       │  │
+│  │  ┌─────────────────────────┐  │  │
+│  │  │ metadata                │  │  │
+│  │  │ central_axis            │  │  │
+│  │  │ dimensional_spaces      │  │  │
+│  │  │ coordinate_mappings     │  │  │
+│  │  └─────────────────────────┘  │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
+```
+
+**Structure contents:**
+- `metadata`: Version, timestamps, statistics
+- `central_axis`: Vector points, coordinate map, free slots for reuse
+- `dimensional_spaces`: Value domains with deduplication
+- `coordinate_mappings`: Coordinate-to-value-id mappings with reference counts
 
 ## Development
 
 ### Requirements
 - Python 3.9+
-- Dependencies: msgpack, aiofiles
+- Dependencies: msgpack, aiofiles, lz4, bidict
 
 ## Coordinate System Examples
 

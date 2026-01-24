@@ -55,10 +55,10 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/domasles/vector"
+"Homepage" = "https://github.com/domasles/vector"
 "Bug Reports" = "https://github.com/domasles/vector/issues"
-Source = "https://github.com/domasles/vector"
-Documentation = "https://github.com/domasles/vector#readme"
+"Source" = "https://github.com/domasles/vector"
+"Documentation" = "https://github.com/domasles/vector#readme"
 
 [tool.setuptools.dynamic]
 version = {attr = "vector_datalib.meta.__version__"}
